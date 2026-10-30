@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LifeOS</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">LifeOS <span id="llm" class="chip"></span></div>
+  <nav id="tabs">
+    <button data-tab="today" class="on">今日</button>
+    <button data-tab="memory">记忆</button>
+    <button data-tab="graph">星图</button>
+    <button data-tab="gear">器材</button>
+    <button data-tab="her">她</button>
+    <button data-tab="review">复盘</button>
+    <button data-tab="system">系统</button>
+  </nav>
+</header>
+
+<main>
+  <section id="today" class="tab on"></section>
+  <section id="memory" class="tab"></section>
+  <section id="graph" class="tab"><div class="legend" id="graph-legend"></div><div id="network"></div></section>
+  <section id="gear" class="tab"></section>
+  <section id="her" class="tab"></section>
+  <section id="review" class="tab"></section>
+  <section id="system" class="tab"></section>
+</main>
+
+<form id="capture">
+  <input id="capture-text" placeholder="随手记一句：收了一支镜头 / 她说想… / 明天要…" autocomplete="off">
+  <button>记住</button>
+</form>
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

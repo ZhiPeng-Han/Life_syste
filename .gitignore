@@ -2,3 +2,5 @@ data/
 .env
 *.sqlite
 *.db
+__pycache__/
+*.pyc
