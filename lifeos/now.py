@@ -72,8 +72,9 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
         score = planner.task_score(t, today, planner.slot_energy(at.hour * 60 + at.minute))
         if urgent:
             score *= 3
-        if t["domain"] == "关系" and _is_evening(at):
-            score *= 1.3
+        if t["domain"] == "关系":
+            # 烦躁、低落的时候先照顾好自己，再去照顾关系；平静的晚上最适合和她相关的事
+            score *= 0.4 if feeling in ("烦躁", "低落") else 1.3 if _is_evening(at) else 1.0
         score /= 1 + 0.4 * (t["skips"] or 0)
         out.append({"kind": "task", "task_id": t["id"], "title": t["title"], "domain": t["domain"],
                     "minutes": t["est_minutes"] or 30, "score": score, "reason": _task_reason(t, feeling, today)})

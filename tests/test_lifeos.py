@@ -125,6 +125,12 @@ class NowTest(unittest.TestCase):
         self.assertTrue(all(c["minutes"] <= 30 for c in cands))
         self.assertEqual(cands[0]["kind"], "care")  # 累的时候，先照顾自己
 
+    def test_irritated_puts_self_care_before_relationship_talks(self):
+        conn = fresh()
+        from datetime import datetime
+        cands = now.candidates(conn, "烦躁", None, datetime(2026, 11, 3, 20, 0))
+        self.assertEqual(cands[0]["kind"], "care")
+
     def test_deadline_rises_even_when_tired(self):
         conn = fresh()
         from lifeos import tasks
