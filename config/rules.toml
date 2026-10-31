@@ -59,10 +59,11 @@ role = "side"
 keywords = ["书", "阅读", "哲学", "思考", "导则", "人生"]
 
 # ---------------------------------------------------------------
-# 固定节律（受保护块）。weekdays: 1=周一 ... 7=周日
+# 节律：生活的节奏，不是时间格子。平时只作为温和的提示出现；
+# 只有你点"今天我需要一点结构"时，才会展开成时间表。weekdays: 1=周一 ... 7=周日
 # ---------------------------------------------------------------
 [[blocks]]
-name = "📚 Part 3 晨间学习（间隔复习 + 一个知识点）"
+name = "📚 早晨的 Part 3 时光"
 domain = "Part3"
 weekdays = [1, 2, 3, 4, 5]
 start = "07:00"
@@ -84,14 +85,14 @@ start = "18:30"
 end = "19:30"
 
 [[blocks]]
-name = "❤️ 受保护：和她的时间（手机静音）"
+name = "❤️ 和她在一起"
 domain = "关系"
 weekdays = [2, 4]
 start = "19:30"
 end = "22:00"
 
 [[blocks]]
-name = "❤️ 受保护：周六约会"
+name = "❤️ 周六，属于你们"
 domain = "关系"
 weekdays = [6]
 start = "17:30"
@@ -105,7 +106,7 @@ start = "12:30"
 end = "13:00"
 
 [[blocks]]
-name = "🧹 周六大扫除（区域轮换）"
+name = "🧹 周六上午收拾一下家"
 domain = "生活维持"
 weekdays = [6]
 start = "09:00"
@@ -119,35 +120,35 @@ start = "10:15"
 end = "11:00"
 
 [[blocks]]
-name = "📸 拍照上架批次（固定布景）"
+name = "📸 拍照上架（一次拍完）"
 domain = "器材事业"
 weekdays = [7]
 start = "10:00"
 end = "12:00"
 
 [[blocks]]
-name = "📚 Part 3 深度块（案例研究 / PEDR）"
+name = "📚 Part 3 安静的下午"
 domain = "Part3"
 weekdays = [7]
 start = "14:00"
 end = "17:00"
 
 [[blocks]]
-name = "🍳 一起备菜（本周菜单）"
+name = "🍳 一起做饭"
 domain = "关系"
 weekdays = [7]
 start = "17:30"
 end = "19:00"
 
 [[blocks]]
-name = "📅 周复盘 + ❤️ 关系规划"
+name = "✉️ 读这周的信，想想下周想和她做什么"
 domain = "阅读思考"
 weekdays = [7]
 start = "20:30"
 end = "21:15"
 
 [[blocks]]
-name = "🏠 15 分钟复位（碗、台面、垃圾）+ 晚间签到"
+name = "🌙 收一收，说晚安"
 domain = "生活维持"
 weekdays = [1, 2, 3, 4, 5, 6, 7]
 start = "22:00"
@@ -232,3 +233,61 @@ share_of_profit = 0.3  # 器材事业净利润的 30% 计入
 # ---------------------------------------------------------------
 [meals]
 light_dinners_per_week = 4   # 支持她减肥：每周至少几顿轻食晚餐
+
+# ---------------------------------------------------------------
+# 此刻：当你问"现在做什么"时，除了口袋里的事，系统也可以建议这些。
+# 它们不是任务，是照顾自己的方式。feelings = 适合什么感受的时候；when = any / day / evening
+# ---------------------------------------------------------------
+[[now_options]]
+title = "出去走 20 分钟，不带目的地"
+minutes = 20
+feelings = ["烦躁", "疲惫", "低落", "平静"]
+when = "any"
+
+[[now_options]]
+title = "拿起相机，拍一张此刻的光"
+minutes = 15
+feelings = ["平静", "充沛", "低落"]
+when = "day"
+
+[[now_options]]
+title = "给她发一条消息，说说你此刻在想什么"
+minutes = 5
+feelings = ["充沛", "平静", "疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "泡杯茶，什么都不做，坐 10 分钟"
+minutes = 10
+feelings = ["疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "读 20 分钟书"
+minutes = 20
+feelings = ["平静", "疲惫"]
+when = "any"
+
+[[now_options]]
+title = "收拾一个小角落，10 分钟就停"
+minutes = 10
+feelings = ["烦躁", "平静"]
+when = "any"
+
+[[now_options]]
+title = "拉伸 10 分钟，或者冲个热水澡"
+minutes = 10
+feelings = ["疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "好好做一顿饭，慢慢吃"
+minutes = 60
+feelings = ["平静", "充沛", "低落"]
+when = "evening"
+
+[[now_options]]
+title = "今晚早点睡"
+minutes = 0
+feelings = ["疲惫", "低落"]
+when = "evening"

@@ -10,13 +10,13 @@
 import html
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, db, decisions, meals, memory, planner, relationship, review, tasks)
+from . import (business, config, db, decisions, letter, meals, memory, now, planner, relationship, review, tasks)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -24,6 +24,29 @@ TOKEN = os.environ.get("LIFEOS_TOKEN")
 
 def api_get(path: str, q: dict, conn):
     one = lambda k, d=None: q.get(k, [d])[0]  # noqa: E731
+    if path == "/api/home":
+        t = datetime.now()
+        part = "清晨" if t.hour < 9 else "上午" if t.hour < 12 else "下午" if t.hour < 18 else "晚上" if t.hour < 23 else "深夜"
+        p = now.pocket(conn)
+        return {"greeting": f"周{'一二三四五六日'[t.weekday()]}的{part}。", "hour": t.hour,
+                "feelings": {k: v["icon"] for k, v in now.FEELINGS.items()},
+                "anchors": now.anchors(t.date(), t.hour * 60 + t.minute), "echo": now.echo(conn),
+                "dated": [x for x in p["dated"] if x["days_left"] <= 2], "pocket_count": p["count"],
+                "dates": relationship.upcoming_dates(conn, horizon=14)}
+    if path == "/api/now":
+        exclude = [x for x in one("exclude", "").split(",") if x]
+        minutes = int(one("minutes")) if one("minutes") else None
+        if one("log"):
+            now.log_state(conn, one("feeling", "平静"), minutes, one("note"))
+        sug = now.suggest(conn, one("feeling", "平静"), minutes, exclude, decide=bool(one("decide")))
+        if one("note"):
+            sug["ai"] = now.ai_note(conn, one("feeling"), one("note"), sug)
+        return sug
+    if path == "/api/pocket":
+        return now.pocket(conn)
+    if path == "/api/letter":
+        # 预览用模板（不调用 AI）；点"写信"时 POST 才调用 Claude 并保存
+        return {"markdown": letter.render(conn)}
     if path == "/api/today":
         on = date.fromisoformat(one("date")) if one("date") else date.today()
         return planner.plan(on, conn)
@@ -64,6 +87,28 @@ def api_post(path: str, body: dict, conn):
     parts = path.strip("/").split("/")  # ["api", "items", "L-2026-001"]
     if path == "/api/capture":
         return memory.capture(body["text"], source="web", conn=conn)
+    if path == "/api/now/skip":
+        return now.skip(conn, int(body["task_id"]))
+    if path == "/api/now/letgo":
+        now.let_go(conn, int(body["task_id"]))
+        return {"ok": True}
+    if path == "/api/goodnight":
+        f = now.FEELINGS.get(body.get("feeling") or "", None)
+        if f:
+            now.log_state(conn, body["feeling"], None, "晚安")
+        review.checkin(conn, energy=f and f["energy"], mood=f and f["mood"], sleep=body.get("sleep"),
+                       love_minutes=body.get("love_minutes"), note=body.get("moment"))
+        moment, her = (body.get("moment") or "").strip(), (body.get("her") or "").strip()
+        if moment:
+            memory.capture(moment, source="goodnight", conn=conn)
+        if her:
+            memory.capture(her if "她" in her else f"她{her}", source="goodnight", conn=conn)
+        if body.get("love_minutes"):
+            review.log_time(conn, "关系", int(body["love_minutes"]), "晚安")
+        memory.consolidate(conn=conn)
+        return {"ok": True}
+    if path == "/api/letter":
+        return letter.write(conn)
     if path == "/api/feedback":
         return decisions.feedback(conn, int(body["id"]), body["verdict"], body.get("reason", ""), bool(body.get("severe")))
     if path == "/api/checkin":
@@ -136,6 +181,14 @@ h3{{margin:0 0 4px}} .price{{color:var(--accent);font-size:22px;font-weight:600;
 <div class="grid">{cards}</div></main></body></html>"""
 
 
+def _now_text(conn, q) -> str:
+    feeling = q.get("feeling", ["平静"])[0].strip() or "平静"
+    minutes = q.get("minutes", [""])[0]
+    minutes = int(minutes) if minutes.strip().isdigit() else None
+    now.log_state(conn, feeling, minutes)
+    return now.render_suggestion(now.suggest(conn, feeling, minutes, decide=True))
+
+
 def _capture_text(conn, text: str) -> str:
     if not text.strip():
         return "没有收到内容"
@@ -145,6 +198,8 @@ def _capture_text(conn, text: str) -> str:
 TEXT_ROUTES = {
     "/api/today": lambda conn, q, body: planner.render(planner.plan(conn=conn)),
     "/api/capture": lambda conn, q, body: _capture_text(conn, body.get("text") or q.get("text", [""])[0]),
+    "/api/morning": lambda conn, q, body: now.morning(conn),
+    "/api/now": lambda conn, q, body: _now_text(conn, q),
     "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
         f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),
 }

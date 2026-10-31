@@ -208,6 +208,17 @@ MIGRATIONS = [
     CREATE INDEX idx_tasks_status ON tasks(status);
     CREATE INDEX idx_sugg_cat ON suggestions(category, status);
     """,
+    # v2：主体性改版——记录"此刻"的感受；任务可以被跳过、被放下
+    """
+    CREATE TABLE states (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        feeling TEXT NOT NULL,         -- 充沛 / 平静 / 疲惫 / 烦躁 / 低落
+        minutes INTEGER,               -- 此刻有多少时间
+        note TEXT
+    );
+    ALTER TABLE tasks ADD COLUMN skips INTEGER DEFAULT 0;
+    """,
 ]
 
 

@@ -6,6 +6,7 @@ from datetime import date, timedelta
 os.environ["LIFEOS_HOME"] = tempfile.mkdtemp()
 os.environ["LIFEOS_LLM"] = "off"
 
+from lifeos import letter, now
 from lifeos import business, cards, db, decisions, experiments, extract, meals, memory, planner, relationship, review, seed  # noqa: E402
 
 
@@ -109,6 +110,59 @@ class AutonomyTest(unittest.TestCase):
         r = decisions.feedback(conn, sid, "reject", "全是我不爱吃的", severe=True)
         self.assertEqual(decisions.level(conn, "meal_plan"), 1)
         self.assertIn("L1", r["demoted_to"])
+
+
+class NowTest(unittest.TestCase):
+    def test_tired_gets_care_not_heavy_work(self):
+        conn = fresh()
+        from lifeos import tasks
+        tasks.add(conn, "整理器材账目", "器材事业", 5, "high", 60)
+        from datetime import datetime
+        at = datetime(2026, 11, 3, 20, 0)
+        cands = now.candidates(conn, "疲惫", 30, at)
+        self.assertTrue(cands)
+        self.assertFalse(any(c["title"] == "整理器材账目" for c in cands))
+        self.assertTrue(all(c["minutes"] <= 30 for c in cands))
+        self.assertEqual(cands[0]["kind"], "care")  # 累的时候，先照顾自己
+
+    def test_deadline_rises_even_when_tired(self):
+        conn = fresh()
+        from lifeos import tasks
+        tid = tasks.add(conn, "给甲方发图", "建筑工作", 3, "medium", 20, due=date.today().isoformat())
+        s = now.suggest(conn, "充沛", decide=True)
+        self.assertEqual(s.get("task_id"), tid)
+        self.assertTrue(any(c.get("task_id") == tid for c in now.candidates(conn, "疲惫")))
+
+    def test_skip_three_times_offers_let_go(self):
+        conn = fresh()
+        from lifeos import tasks
+        tid = tasks.add(conn, "整理硬盘", "生活维持")
+        r = [now.skip(conn, tid) for _ in range(3)][-1]
+        self.assertTrue(r["ask_let_go"])
+        now.let_go(conn, tid)
+        self.assertEqual(now.pocket(conn)["count"], len(tasks.list_open(conn)))
+        self.assertNotIn(tid, [t["id"] for t in tasks.list_open(conn)])
+
+    def test_exclude_cycles_and_runs_out_gently(self):
+        conn = fresh()
+        seen = []
+        for _ in range(60):
+            s = now.suggest(conn, "低落", 5, seen)
+            if s["kind"] == "none":
+                break
+            seen.append(s["key"])
+        self.assertEqual(s["kind"], "none")
+
+    def test_morning_and_letter(self):
+        conn = fresh()
+        memory.capture("和她在河边散步，她笑得很开心", conn=conn)
+        now.log_state(conn, "平静")
+        text = now.morning(conn)
+        self.assertIn("口袋里还有", text)
+        self.assertNotIn("07:00–", text)  # 早安不是时间表
+        L = letter.write(conn, save=False)["markdown"]
+        self.assertIn("她", L)
+        self.assertIn("平静", L)
 
 
 class MiscTest(unittest.TestCase):

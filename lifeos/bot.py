@@ -5,7 +5,7 @@
 3. 先不设 LIFEOS_TELEGRAM_CHAT，运行 python -m lifeos bot，给机器人发一条消息，
    终端会打印你的 chat id；再 export LIFEOS_TELEGRAM_CHAT=那个id 后重启。只有这个 chat 能写入你的数据。
 
-命令：/today 今日计划  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
+命令：/now 疲惫 此刻给一个可能性  /morning 早安  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
 其他任何文字都会被当作"随手记"。
 """
 
@@ -15,7 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from . import business, db, decisions, meals, memory, planner, relationship
+from . import business, db, decisions, meals, memory, now, planner, relationship
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -28,6 +28,15 @@ def _call(token: str, method: str, **params) -> dict:
 
 def handle(text: str, conn) -> str:
     text = text.strip()
+    if text.startswith("/morning"):
+        return now.morning(conn)
+    if text.startswith("/now"):
+        parts = text.split()
+        feeling = parts[1] if len(parts) > 1 and parts[1] in now.FEELINGS else None
+        if not feeling:
+            return "你现在感觉怎么样？发：/now " + " / /now ".join(now.FEELINGS)
+        now.log_state(conn, feeling)
+        return now.render_suggestion(now.suggest(conn, feeling, decide=True))
     if text.startswith("/today"):
         return planner.render(planner.plan(conn=conn))
     if text.startswith("/her"):

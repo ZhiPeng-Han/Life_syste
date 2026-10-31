@@ -105,3 +105,33 @@ form.inline input { flex: 1 1 120px; }
   .timeline li { grid-template-columns: 64px 1fr auto; gap: 8px; padding: 8px; }
   .timeline .time { font-size: 12px; }
 }
+
+/* ---------- v0.2 此刻 ---------- */
+.greet { color: var(--muted); margin: 8px 0 0; }
+.ask { font-size: 26px; font-weight: 600; margin: 4px 0 18px; letter-spacing: .5px; }
+.feelings { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.feel { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 4px; border: 1px solid var(--line);
+  background: var(--card); color: var(--fg); border-radius: 14px; font: inherit; font-size: 14px; cursor: pointer; transition: transform .1s; }
+.feel span { font-size: 26px; }
+.feel.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.feel:active { transform: scale(.96); }
+.minutes { margin: 14px 0 10px; }
+.chip-btn { display: inline-block; border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 4px 12px;
+  border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer; }
+.chip-btn.on, label.chip-btn:has(input:checked) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+#now-note { width: 100%; }
+.card.now { margin-top: 16px; padding: 18px; border-color: var(--accent); }
+.card.now .sug { font-size: 19px; font-weight: 600; margin-bottom: 6px; }
+.echo { margin: 18px 0; padding: 14px 16px; border-radius: var(--radius); background: var(--protected); font-size: 15px; }
+.quiet { margin-top: 18px; color: var(--muted); font-size: 14px; }
+.quiet p { margin: 6px 0; }
+.quiet a, .more a { color: var(--fg); text-decoration: none; }
+.pocket { list-style: none; padding: 0; margin: 8px 0 0; }
+.pocket li { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pocket li:last-child { border: 0; }
+details.card summary { cursor: pointer; font-weight: 600; }
+h3.sub { font-size: 14px; color: var(--muted); margin: 16px 0 4px; }
+.more a { display: flex; justify-content: space-between; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.more a:last-child { border: 0; }
+.letter { font-size: 16px; line-height: 1.8; }
+a { color: var(--accent); }

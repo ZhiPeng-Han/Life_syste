@@ -22,10 +22,10 @@ function toast(msg) {
 async function feedback(id, verdict) {
   let reason = "";
   if (verdict !== "accept") {
-    reason = prompt(verdict === "reject" ? "哪里不好？（系统会据此学习）" : "你改成了什么？为什么？") ?? "";
+    reason = prompt(verdict === "reject" ? "哪里不合适？（不想说也没关系）" : "你改成了什么？（不想说也没关系）") ?? "";
   }
   await api("/api/feedback", { id, verdict, reason });
-  toast("已记录反馈，系统会据此调整 🙏");
+  toast("收到，它会慢慢更懂你");
   render(current);
 }
 
@@ -38,7 +38,9 @@ const fbButtons = (id) =>
 async function renderToday(el) {
   const p = await api("/api/today");
   el.innerHTML = `
-    <h2>📅 ${p.date} 周${p.weekday} <span class="chip">${esc(p.autonomy_level)}</span></h2>
+    <p class="small"><a href="#now">← 回到此刻</a></p>
+    <h2>🗓 今天的结构 · ${p.date} 周${p.weekday}</h2>
+    <p class="small muted">这是你选择要的结构。它是工具，不是命令；随时可以不按它来。</p>
     <div class="card"><b>🎯 今天只需记住的 3 件事</b>
       <ol class="top3">${p.top3.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>
       <div class="row small muted">这个日程好用吗？ ${fbButtons(p.suggestion_id)}</div>
@@ -278,7 +280,7 @@ async function renderHer(el) {
   const d = await api("/api/her");
   const statuses = ["想法", "规划中", "进行中", "已实现"];
   el.innerHTML = `
-    <div class="grid"><div class="stat"><b>${d.love_hours}h</b><span>本周高质量相处</span></div>
+    <div class="grid"><div class="stat"><b>${d.love_hours}h</b><span>这周在一起的时间</span></div>
       ${d.dates.slice(0, 2).map((x) => `<div class="stat"><b>${x.days_left} 天</b><span>${esc(x.name)} ${x.date}</span></div>`).join("")}</div>
     <h2>💡 惊喜建议（微 / 中 / 大）</h2>
     <div class="card">${d.ideas.map((i) => `<p><span class="chip love">${i.scale}</span> ${esc(i.idea)} <span class="muted small">——「${esc(i.wish)}」</span></p>`).join("") || '<p class="muted">先记下她的愿望。</p>'}
@@ -343,7 +345,7 @@ function radar(ledger) {
 
 async function renderReview(el) {
   const r = await api("/api/review");
-  el.innerHTML = `<div class="card">${radar(r.ledger)}</div>
+  el.innerHTML = `<p class="small"><a href="#more">← 更多</a></p><p class="small muted">这里是数据。它们只是参考，不是对你的评分。</p><div class="card">${radar(r.ledger)}</div>
     <div class="row"><button class="btn primary" id="save-review">生成并保存本周复盘（含 AI 教练点评）</button></div>
     <div class="card md" style="margin-top:12px">${md(r.markdown)}</div>`;
   $("#save-review").onclick = async () => {
@@ -358,25 +360,193 @@ async function renderReview(el) {
 async function renderSystem(el) {
   const [a, menu] = await Promise.all([api("/api/autonomy"), api("/api/menu")]);
   el.innerHTML = `
-    <h2>🎚 决策自主等级</h2>
+    <p class="small"><a href="#more">← 更多</a></p>
+    <h2>🤝 交给它的小事</h2>
+    <p class="small muted">只有琐碎的决定才会慢慢交给系统（菜单、发货日、定价）。关于她、关于人生的事，它永远只是提建议。</p>
     <div class="card md"><table><tr><th>决策</th><th>当前</th><th>上限</th><th>最近采纳率</th></tr>
       ${a.overview.map((o) => `<tr><td>${esc(o.desc)}</td><td>${esc(o.level)}</td><td>${esc(o.cap)}</td><td>${o.rate === null ? "—" : Math.round(o.rate * 100) + "%"}（${o.n}）</td></tr>`).join("")}</table>
       ${a.promotions.map((p) => `<p>⬆️ 「${esc(p.category)}」可从 ${esc(p.from)} 升到 ${esc(p.to)}（命令行：lifeos autonomy set ${esc(p.category)} +1）</p>`).join("")}
       <p class="small muted">采纳率连续达标才会提议升级；任何一次"错得离谱"立即降级。感情和人生大事永远只做建议。</p></div>
-    <h2>📝 等你反馈的建议</h2>
+    <h2>📝 它给过的建议（想反馈就反馈，不想也没关系）</h2>
     ${a.pending.map((s) => `<div class="card"><span class="chip">${esc(s.category)}</span> ${esc(s.content).slice(0, 300)}<div class="row" style="margin-top:6px">${fbButtons(s.id)}</div></div>`).join("") || '<p class="muted">没有待反馈的建议。</p>'}
     <h2>🍳 本周菜单（🥗 = 轻食，支持她的健康目标）</h2>
     <div class="card">${menu.days.map((d) => `<div>${d.day} ${esc(d.dish)} ${d.light ? "🥗" : ""}</div>`).join("")}
       <p class="small muted">🛒 ${menu.shopping.map(esc).join("、")}</p></div>`;
 }
 
+
+// ------------------------------------------------------------------ 此刻
+const NOW = { feeling: null, minutes: null, seen: [], note: "" };
+const MINUTES = [[15, "一会儿"], [45, "半小时多"], [120, "一两个小时"], ["", "不确定"]];
+
+async function renderNow(el) {
+  const h = await api("/api/home");
+  const evening = h.hour >= 20 || h.hour < 3;
+  const morning = h.hour >= 5 && h.hour < 11;
+  const anchors = h.anchors.filter((a) => !a.includes("💼"));
+  el.innerHTML = `
+    <p class="greet">${esc(h.greeting)}</p>
+    <h1 class="ask">你现在感觉怎么样？</h1>
+    <div class="feelings">${Object.entries(h.feelings).map(([f, i]) =>
+      `<button class="feel ${NOW.feeling === f ? "on" : ""}" data-f="${f}"><span>${i}</span>${f}</button>`).join("")}</div>
+    <div class="row minutes"><span class="muted small">有多少时间？</span>${MINUTES.map(([m, label]) =>
+      `<button class="chip-btn ${String(NOW.minutes ?? "") === String(m) ? "on" : ""}" data-m="${m}">${label}</button>`).join("")}</div>
+    <input id="now-note" value="${esc(NOW.note)}" placeholder="想说点什么也可以（可不填）">
+    <div id="now-card">${NOW.feeling ? "" : '<p class="muted small" style="margin-top:14px">点一下你的感受，我给你一个可能性。或者，什么都不点。</p>'}</div>
+    ${h.echo ? `<div class="echo">✨ ${esc(h.echo)}</div>` : ""}
+    ${morning ? `<div class="quiet"><span class="muted small">昨晚睡了大概：</span>${[5, 6, 7, 8, 9].map((x) => `<button class="chip-btn" data-sleep="${x}">${x}h</button>`).join("")}</div>` : ""}
+    <div class="quiet">
+      ${anchors.length ? `<p>🌿 今天的节律：${anchors.map(esc).join("；")}</p>` : ""}
+      ${h.dates.map((d) => `<p>🎁 ${esc(d.name)}还有 ${d.days_left} 天</p>`).join("")}
+      ${h.dated.length ? `<p>⏳ 有期限的：${h.dated.map((t) => `${esc(t.title)}（${t.days_left < 0 ? "日期已过，还要做吗？" : t.days_left === 0 ? "今天" : t.days_left === 1 ? "明天" : "后天"}）`).join("；")}</p>` : ""}
+      <p><a href="#pocket">🫧 口袋里有 ${h.pocket_count} 件事，它们会等你 →</a></p>
+      <p><a href="#today">今天我需要一点结构 →</a></p>
+    </div>
+    ${evening ? goodnightForm(h) : ""}`;
+  el.querySelectorAll(".feel").forEach((b) => (b.onclick = () => {
+    NOW.feeling = b.dataset.f; NOW.seen = []; NOW.note = $("#now-note").value;
+    el.querySelectorAll(".feel").forEach((x) => x.classList.toggle("on", x === b));
+    ask(true);
+  }));
+  el.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => {
+    NOW.minutes = b.dataset.m === "" ? null : Number(b.dataset.m); NOW.seen = [];
+    el.querySelectorAll("[data-m]").forEach((x) => x.classList.toggle("on", x === b));
+    if (NOW.feeling) ask(false);
+  }));
+  el.querySelectorAll("[data-sleep]").forEach((b) => (b.onclick = async () => {
+    await api("/api/goodnight", { sleep: Number(b.dataset.sleep) });
+    b.parentElement.innerHTML = '<span class="muted small">记下了。</span>';
+  }));
+  if (NOW.feeling) ask(false);
+  const gn = $("#goodnight");
+  if (gn) gn.onsubmit = goodnight;
+}
+
+async function ask(log, decide = false) {
+  const q = new URLSearchParams({ feeling: NOW.feeling, exclude: NOW.seen.join(",") });
+  if (NOW.minutes) q.set("minutes", NOW.minutes);
+  if (log) { q.set("log", "1"); if (NOW.note) q.set("note", NOW.note); }
+  if (decide) q.set("decide", "1");
+  const s = await api("/api/now?" + q);
+  const card = $("#now-card");
+  if (s.kind === "none") {
+    card.innerHTML = `<div class="card now"><div class="sug">🍃 ${esc(s.title)}</div><p class="muted">${esc(s.reason)}</p></div>`;
+    return;
+  }
+  card.innerHTML = `<div class="card now">
+    ${decide ? '<p class="small muted">那就这个吧：</p>' : ""}
+    <div class="sug">${s.kind === "care" ? "🌿" : "🫧"} ${esc(s.title)}</div>
+    <p class="muted">${esc(s.ai || s.reason)}</p>
+    <div class="row">
+      ${s.kind === "task" ? `<button class="btn primary" onclick="nowDone(${s.task_id})">做完了 ✓</button>` : `<button class="btn primary" onclick="nowOk()">好</button>`}
+      <button class="btn" onclick="nowNext('${s.key}')">换一个</button>
+      ${decide ? "" : '<button class="btn" onclick="ask(false, true)">帮我决定</button>'}
+      ${s.kind === "task" ? `<button class="btn" onclick="nowSkip(${s.task_id}, '${s.key}')">现在不想</button>` : ""}
+    </div>
+    <p class="small muted" style="margin-top:10px">或者，什么都不做也很好。</p></div>`;
+}
+function nowNext(key) { NOW.seen.push(key); ask(false); }
+function nowOk() { $("#now-card").innerHTML = '<p class="muted" style="margin-top:14px">去吧。🌿</p>'; }
+async function nowDone(id) { await api(`/api/tasks/${id}/done`, {}); toast("✓ 做完了。"); NOW.seen = []; ask(false); }
+async function nowSkip(id, key) {
+  const r = await api("/api/now/skip", { task_id: id });
+  NOW.seen.push(key);
+  if (r.ask_let_go) {
+    $("#now-card").innerHTML = `<div class="card now"><div class="sug">这件事你已经跳过 ${r.skips} 次了。</div>
+      <p class="muted">它还重要吗？放下不是失败，是选择。</p>
+      <div class="row"><button class="btn primary" onclick="letGo(${id}, true)">🍃 放下它</button><button class="btn" onclick="ask(false)">留着，以后再说</button></div></div>`;
+  } else ask(false);
+}
+async function letGo(id, thenAsk) {
+  await api("/api/now/letgo", { task_id: id });
+  toast("🍃 放下了。");
+  if (thenAsk) ask(false); else render(current);
+}
+
+function goodnightForm() {
+  return `<h2>🌙 晚安</h2>
+  <form class="card" id="goodnight">
+    <p class="muted small">三个问题，都可以不答。</p>
+    <label class="small muted">今天有什么值得记住的瞬间？</label>
+    <textarea name="moment" rows="2" style="width:100%"></textarea>
+    <label class="small muted">她今天怎么样？说了什么？</label>
+    <input name="her" style="width:100%">
+    <div class="row" style="margin-top:8px"><span class="small muted">和她在一起：</span>
+      ${[["", "没见面"], [30, "一会儿"], [180, "一晚上"], [480, "一整天"]].map(([m, l], i) =>
+        `<label class="chip-btn"><input type="radio" name="love" value="${m}" ${i === 0 ? "checked" : ""} hidden>${l}</label>`).join("")}</div>
+    <button class="btn primary" style="margin-top:10px">晚安</button>
+  </form>`;
+}
+async function goodnight(e) {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  await api("/api/goodnight", { feeling: NOW.feeling, moment: f.moment, her: f.her, love_minutes: f.love ? Number(f.love) : null });
+  e.target.outerHTML = '<div class="card"><p>晚安。今天辛苦了。🌙</p></div>';
+}
+
+// ------------------------------------------------------------------ 口袋
+async function renderPocket(el) {
+  const p = await api("/api/pocket");
+  const item = (t) => `<li><span>${esc(t.title)}</span>
+    <span class="row"><button class="btn sm" onclick="doneTask(${t.id})">✓</button><button class="btn sm" title="放下" onclick="letGo(${t.id})">🍃</button></span></li>`;
+  el.innerHTML = `
+    <h2>🫧 口袋</h2>
+    <p class="muted">这里装着你的杂事。它们会等你，不会追你。想做的时候来拿一件，或者在「此刻」让我帮你挑。</p>
+    ${p.dated.length ? `<h3 class="sub">⏳ 有日期的</h3><ul class="pocket">${p.dated.map((t) =>
+      item({ ...t, title: `${t.title}（${t.days_left < 0 ? "日期已过，还要做吗？" : t.days_left === 0 ? "今天" : t.due}）` })).join("")}</ul>` : ""}
+    ${Object.entries(p.groups).map(([g, items]) => `<details class="card"><summary>${esc(g)} · ${items.length}</summary><ul class="pocket">${items.map(item).join("")}</ul></details>`).join("")}
+    <form class="inline card" id="pocket-form"><input name="title" placeholder="放一件事进口袋" required>
+      <select name="domain">${META.domains.map((d) => `<option>${esc(d)}</option>`).join("")}</select>
+      <select name="energy"><option value="low">不费脑</option><option value="medium" selected>一般</option><option value="high">需要专注</option></select>
+      <input name="minutes" type="number" value="30" style="max-width:80px" title="大约几分钟">
+      <input name="due" type="date" style="max-width:150px" title="只有真正有期限才填">
+      <button class="btn primary">放进去</button></form>
+    <p class="small muted">🍃 = 放下。放下不是失败，是选择。</p>`;
+  $("#pocket-form").onsubmit = async (e) => {
+    e.preventDefault();
+    await api("/api/tasks", Object.fromEntries(new FormData(e.target)));
+    toast("放进口袋了");
+    render("pocket");
+  };
+}
+
+// ------------------------------------------------------------------ 一封信
+async function renderLetter(el) {
+  const r = await api("/api/letter");
+  el.innerHTML = `
+    <div class="card md letter">${md(r.markdown)}</div>
+    <div class="row"><button class="btn primary" id="write-letter">${META.llm ? "请它好好写这周的信" : "保存这封信"}</button>
+      <a class="small" href="#review">看数据 →</a></div>`;
+  $("#write-letter").onclick = async () => {
+    toast("写信中…");
+    const s = await api("/api/letter", {});
+    el.querySelector(".letter").innerHTML = md(s.markdown);
+    toast("信已保存到 data/letters/");
+  };
+}
+
+// ------------------------------------------------------------------ 更多
+async function renderMore(el) {
+  el.innerHTML = `
+    <div class="card more">
+      <a href="#today">🗓 今天的结构 <span class="muted small">需要的日子再打开</span></a>
+      <a href="#graph">✨ 星图 <span class="muted small">人生各部分怎么连在一起</span></a>
+      <a href="#review">📊 数据 <span class="muted small">时间账本、平衡轮、规律</span></a>
+      <a href="#system">🤝 交给它的小事 <span class="muted small">菜单、建议、放权</span></a>
+      <a href="/shop">📷 器材橱窗 <span class="muted small">给她看的平台雏形</span></a>
+    </div>
+    <p class="small muted">这个系统的原则：它替你记住，在你需要时帮你做个小决定；其余时候，它安静。你是生活的主体。</p>`;
+}
+
 // ------------------------------------------------------------------ 框架
-const RENDER = { today: renderToday, memory: renderMemory, graph: renderGraph, gear: renderGear, her: renderHer, review: renderReview, system: renderSystem };
-let current = "today";
+const RENDER = { now: renderNow, pocket: renderPocket, her: renderHer, memory: renderMemory, gear: renderGear, letter: renderLetter, more: renderMore,
+  today: renderToday, graph: renderGraph, review: renderReview, system: renderSystem };
+const TAB_OF = { today: "more", graph: "more", review: "more", system: "more" };
+let current = "now";
 
 async function render(tab) {
   current = tab;
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === (TAB_OF[tab] || tab)));
   document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("on", s.id === tab));
   try {
     await RENDER[tab]($("#" + tab));
@@ -386,14 +556,14 @@ async function render(tab) {
 }
 
 $("#tabs").onclick = (e) => { if (e.target.dataset.tab) location.hash = e.target.dataset.tab; };
-window.addEventListener("hashchange", () => render(location.hash.slice(1) in RENDER ? location.hash.slice(1) : "today"));
+window.addEventListener("hashchange", () => render(location.hash.slice(1) in RENDER ? location.hash.slice(1) : "now"));
 $("#capture").onsubmit = async (e) => {
   e.preventDefault();
   const input = $("#capture-text");
   if (!input.value.trim()) return;
   const r = await api("/api/capture", { text: input.value });
   input.value = "";
-  const parts = [`🧠 记住了 ${r.memories.length} 条`];
+  const parts = [`🧠 记下了`];
   if (r.tasks.length) parts.push(`☐ 任务：${r.tasks.map((t) => t.title).join("；")}`);
   if (r.wishes.length) parts.push(`❤️ 愿望：${r.wishes.map((w) => w.content).join("；")}`);
   if (r.items.length) parts.push(`📷 ${r.items.map((i) => `${i.action === "buy" ? "收" : "出"} ${i.model}`).join("；")}`);
@@ -404,5 +574,5 @@ $("#capture").onsubmit = async (e) => {
 (async () => {
   META = await api("/api/meta");
   $("#llm").textContent = META.llm ? "Claude" : "规则引擎";
-  render(location.hash.slice(1) in RENDER ? location.hash.slice(1) : "today");
+  render(location.hash.slice(1) in RENDER ? location.hash.slice(1) : "now");
 })();

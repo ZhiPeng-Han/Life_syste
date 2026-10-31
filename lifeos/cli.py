@@ -5,8 +5,8 @@ import json
 import sys
 from datetime import date
 
-from . import (__version__, business, cards, config, db, decisions, experiments, llm, meals, memory, planner,
-               relationship, review, seed, tasks)
+from . import (__version__, business, cards, config, db, decisions, experiments, letter, llm, meals, memory, now,
+               planner, relationship, review, seed, tasks)
 
 
 def out(obj) -> None:
@@ -23,6 +23,62 @@ def cmd_init(a, conn):
 def cmd_add(a, conn):
     r = memory.capture(" ".join(a.text), source="cli", conn=conn)
     out(memory.describe(r) + f"（{r['engine']}）")
+
+
+def cmd_now(a, conn):
+    feeling = a.feeling
+    if not feeling:
+        opts = list(now.FEELINGS)
+        print("你现在感觉怎么样？ " + "  ".join(f"{i + 1}.{now.FEELINGS[f]['icon']}{f}" for i, f in enumerate(opts)))
+        ans = input("> ").strip()
+        feeling = opts[int(ans) - 1] if ans.isdigit() and 0 < int(ans) <= len(opts) else (ans if ans in opts else "平静")
+    now.log_state(conn, feeling, a.minutes)
+    seen = []
+    while True:
+        sug = now.suggest(conn, feeling, a.minutes, seen, decide=a.decide)
+        out("\n" + now.render_suggestion(sug))
+        if sug["kind"] == "none":
+            return
+        ans = input("\n[回车] 好  [n] 换一个  [d] 做完了  [s] 跳过  [q] 算了 > ").strip().lower()
+        if ans == "n":
+            seen.append(sug["key"])
+            continue
+        if ans == "d" and sug["kind"] == "task":
+            tasks.done(conn, sug["task_id"])
+            out("✓ 好的。")
+        elif ans == "s" and sug["kind"] == "task":
+            r = now.skip(conn, sug["task_id"])
+            if r["ask_let_go"] and input("这件事你跳过好几次了，要放下吗？(y/n) ").strip().lower() == "y":
+                now.let_go(conn, sug["task_id"])
+                out("🍃 放下了。")
+        return
+
+
+def cmd_pocket(a, conn):
+    p = now.pocket(conn)
+    lines = [f"🫧 口袋里有 {p['count']} 件事，它们会等你。"]
+    if p["dated"]:
+        lines.append("\n⏳ 有日期的")
+        lines += [f"  #{t['id']} {t['title']}（{t['due']}）" for t in p["dated"]]
+    for g, items in p["groups"].items():
+        lines.append(f"\n{g}")
+        lines += [f"  #{t['id']} {t['title']}" for t in items]
+    lines.append("\n做完：lifeos task done ID ；放下：lifeos letgo ID")
+    out("\n".join(lines))
+
+
+def cmd_letgo(a, conn):
+    for tid in a.ids:
+        now.let_go(conn, tid)
+    out("🍃 放下了。放下也是一种选择。")
+
+
+def cmd_morning(a, conn):
+    out(now.morning(conn))
+
+
+def cmd_letter(a, conn):
+    out(letter.write(conn)["markdown"])
 
 
 def cmd_today(a, conn):
@@ -271,7 +327,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("text", nargs="+")
     s.set_defaults(fn=cmd_add)
 
-    s = sub.add_parser("today", help="今日驾驶舱：日程 + 3 件事 + 提醒")
+    s = sub.add_parser("now", help="此刻：你现在感觉怎么样？给你一个可能性")
+    s.add_argument("--feeling", "-f", choices=list(now.FEELINGS))
+    s.add_argument("--minutes", "-m", type=int, help="此刻有多少分钟")
+    s.add_argument("--decide", action="store_true", help="帮我决定：不随机，直接给最合适的")
+    s.set_defaults(fn=cmd_now)
+
+    sub.add_parser("pocket", help="口袋：装着的杂事，不追你").set_defaults(fn=cmd_pocket)
+
+    s = sub.add_parser("letgo", help="放下一件事")
+    s.add_argument("ids", nargs="+", type=int)
+    s.set_defaults(fn=cmd_letgo)
+
+    sub.add_parser("morning", help="早安：今天的节律、有期限的事、一个回响").set_defaults(fn=cmd_morning)
+    sub.add_parser("letter", help="一封信：写给这一周的你").set_defaults(fn=cmd_letter)
+
+    s = sub.add_parser("today", help="今天我需要一点结构：展开时间表")
     s.add_argument("--date")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_today)
