@@ -80,6 +80,20 @@ def capture(text: str, source: str = "cli", conn=None) -> dict:
     return summary
 
 
+def describe(r: dict) -> str:
+    """把 capture 的结果变成一段简短的中文回执。"""
+    cur = config.currency()
+    lines = [f"🧠 记住了 {len(r['memories'])} 条"]
+    lines += [f"☐ 任务：{t['title']}" + (f"（{t['due']}）" if t.get("due") else "") for t in r["tasks"]]
+    lines += [f"❤️ 她的愿望：{w['content']}" for w in r["wishes"]]
+    for i in r["items"]:
+        verb = "收入" if i["action"] == "buy" else "卖出"
+        lines.append(f"📷 {verb} {i['model']} {cur}{i['price']:.0f}" + (f" → {i['code']}" if i.get("code") else "（没找到对应库存）"))
+    if any(m["status"] == "needs_confirm" for m in r["memories"]):
+        lines.append("❓ 有内容 AI 不太确定，稍后在「记忆」页确认")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------ 检索
 
 def _tokens(text: str) -> Counter:

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.1 — 2026-10-31 · iPhone 可用
+
+- `python -m lifeos phone`：自动生成并保存访问口令、显示局域网与 Tailscale 链接、运行期间阻止 Mac 睡眠
+- 双击启动脚本：`start-lifeos.command`（Mac）/ `start-lifeos.bat`（Windows）
+- 可添加到 iPhone 主屏幕：全屏 App 模式、图标、安全区适配、输入框不再自动放大
+- 给快捷指令用的纯文本接口：`/api/capture`、`/api/today`、`/api/her` 加 `?format=text`，支持「嘿 Siri，记一下」
+- 文档：docs/iPhone使用指南.md
+
 ## v0.1.0 — 2026-10-30 · 第一个能用的版本
 
 - 记忆系统：随手记 → Claude / 规则引擎抽取成记忆、任务、愿望、器材交易；时近性+重要性+相关性检索；日摘要巩固；低置信度待确认

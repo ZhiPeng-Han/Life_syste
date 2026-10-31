@@ -53,12 +53,7 @@ def handle(text: str, conn) -> str:
             return "用法：/fb 编号 accept|reject|modify 原因"
         decisions.feedback(conn, int(parts[1]), parts[2], parts[3] if len(parts) > 3 else "")
         return "已记录反馈 🙏"
-    r = memory.capture(text, source="telegram", conn=conn)
-    lines = [f"🧠 记住了 {len(r['memories'])} 条（{r['engine']}）"]
-    lines += [f"☐ {t['title']}" for t in r["tasks"]]
-    lines += [f"❤️ {w['content']}" for w in r["wishes"]]
-    lines += [f"📷 {'收' if i['action'] == 'buy' else '出'} {i['model']} {i['price']}" for i in r["items"]]
-    return "\n".join(lines)
+    return memory.describe(memory.capture(text, source="telegram", conn=conn))
 
 
 def run() -> None:

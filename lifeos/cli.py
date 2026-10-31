@@ -22,18 +22,7 @@ def cmd_init(a, conn):
 
 def cmd_add(a, conn):
     r = memory.capture(" ".join(a.text), source="cli", conn=conn)
-    lines = [f"🧠 已记住（{r['engine']}）"]
-    for m in r["memories"]:
-        flag = " ❓待确认" if m["status"] == "needs_confirm" else ""
-        lines.append(f"  · [{m['domain']}] {m['content']}{flag}")
-    for t in r["tasks"]:
-        lines.append(f"  ☐ 任务 #{t['id']}：{t['title']}" + (f"（{t['due']}）" if t["due"] else ""))
-    for w in r["wishes"]:
-        lines.append(f"  ❤️ 愿望 #{w['id']}：{w['content']}")
-    for i in r["items"]:
-        verb = "收入" if i["action"] == "buy" else "卖出"
-        lines.append(f"  📷 {verb} {i['model']} @ {config.currency()}{i['price']}" + (f" → {i['code']}" if i["code"] else "（未找到对应库存）"))
-    out("\n".join(lines))
+    out(memory.describe(r) + f"（{r['engine']}）")
 
 
 def cmd_today(a, conn):
@@ -260,6 +249,12 @@ def cmd_serve(a, conn):
     web.serve(a.host, a.port)
 
 
+def cmd_phone(a, conn):
+    from . import phone
+
+    phone.run(a.port)
+
+
 def cmd_bot(a, conn):
     from . import bot
 
@@ -411,6 +406,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8765)
     s.set_defaults(fn=cmd_serve)
+
+    s = sub.add_parser("phone", help="让 iPhone 能访问：生成口令、显示手机链接、启动服务")
+    s.add_argument("--port", type=int, default=8765)
+    s.set_defaults(fn=cmd_phone)
 
     sub.add_parser("bot", help="启动 Telegram 机器人（手机随手记）").set_defaults(fn=cmd_bot)
     return p

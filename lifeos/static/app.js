@@ -222,7 +222,7 @@ async function renderGear(el) {
       <button class="btn primary">评估</button>
     </form>
     <div id="deal-result"></div>
-    <h2>🗂 库存流水线 <a class="small" href="/shop" target="_blank">打开器材橱窗 ↗</a></h2>
+    <h2>🗂 库存流水线 <a class="small" href="/shop">打开器材橱窗 →</a></h2>
     <div class="kanban">${d.statuses.map((st) => `
       <div class="col"><h3>${st} · ${d.items.filter((i) => i.status === st).length}</h3>
       ${d.items.filter((i) => i.status === st).map((i) => `

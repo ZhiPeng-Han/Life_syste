@@ -147,6 +147,15 @@ class MiscTest(unittest.TestCase):
         self.assertEqual(up[0]["days_left"], 7)
         self.assertTrue(up[0]["remind_today"])
 
+    def test_iphone_text_routes(self):
+        from lifeos import web
+
+        conn = fresh()
+        reply = web.TEXT_ROUTES["/api/capture"](conn, {}, {"text": "她说想去看极光"})
+        self.assertIn("她的愿望", reply)
+        self.assertEqual(web.TEXT_ROUTES["/api/capture"](conn, {}, {"text": " "}), "没有收到内容")
+        self.assertIn("今天只需记住的 3 件事", web.TEXT_ROUTES["/api/today"](conn, {}, {}))
+
     def test_weekly_review_renders(self):
         conn = fresh()
         r = review.weekly(conn, save=False)

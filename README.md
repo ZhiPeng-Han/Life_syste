@@ -41,7 +41,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 <summary>全部命令</summary>
 
 ```
-init / add / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
+init / phone / add / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
 item（库存：add/set/sell/list/stats）/ deal（捡漏评估）/ her / wish / date / menu
 card（Part 3 卡片）/ exp（个人实验）/ decide（决策日志）/ review / manual / consolidate / serve / bot
 ```
@@ -49,11 +49,12 @@ card（Part 3 卡片）/ exp（个人实验）/ decide（决策日志）/ review
 `python -m lifeos <命令> -h` 查看参数。
 </details>
 
-## 手机上用
+## 在 iPhone 上用
 
-- **仪表盘**：`LIFEOS_TOKEN=随机字符 python -m lifeos serve --host 0.0.0.0`，手机打开 `http://电脑IP:8765/?token=随机字符`
-- **Telegram 随手记**：见 `lifeos/bot.py` 顶部说明，`python -m lifeos bot`
-- **器材橱窗**（给她看的平台原型）：`/shop`
+👉 **一步一步的图文说明：[docs/iPhone使用指南.md](docs/iPhone使用指南.md)**
+
+简单说：电脑上双击 `start-lifeos.command`（Windows 用 `start-lifeos.bat`）→ iPhone Safari 打开窗口里的链接 → 添加到主屏幕。
+在外面用 Tailscale 连接；「嘿 Siri，记一下」通过快捷指令随手记录。
 
 ## 结构
 

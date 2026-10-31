@@ -97,7 +97,6 @@ def weekly(conn, end: date | None = None, save: bool = True, coach: bool = True)
     end = end or date.today()
     start = end - timedelta(days=6)
     s, e = start.isoformat(), end.isoformat()
-    rules = config.rules()
 
     minutes = dict(conn.execute(
         "SELECT domain, SUM(minutes) FROM timelog WHERE day BETWEEN ? AND ? GROUP BY domain", (s, e)
@@ -223,7 +222,6 @@ def render_weekly(d: dict) -> str:
 
 def user_manual(conn, save: bool = True) -> str:
     end = date.today()
-    ck = _checkins(conn, end - timedelta(days=90), end)
     L = [f"# 我的说明书（系统自动维护 · 更新于 {end.isoformat()}）", "",
          "> 这是系统对你的理解。不对的地方请直接告诉它（lifeos add \"其实我……\"），它会修正。", ""]
     L += ["## 被数据支持的规律（相关性，非因果）", ""] + ([f"- {p}" for p in patterns(conn, 90)] or ["- 签到数据不足（至少 2 周）"])

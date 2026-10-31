@@ -6,7 +6,7 @@
 4. 生成"今天只需记住的 3 件事" + 各种提醒（她、复习、滞销、待确认）
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from . import business, cards, config, db, decisions, meals, memory, relationship
 
@@ -127,7 +127,7 @@ def _top3(on, blocks, scheduled, tasks) -> list[str]:
     out = []
     love = [b for b in blocks if b["domain"] == "关系"]
     if love:
-        out.append(f"❤️ {_fmt(love[0]['start'])} {love[0]['title']}")
+        out.append(f"{_fmt(love[0]['start'])} {love[0]['title']}")
     ranked = sorted(scheduled, key=lambda b: -task_score(next(t for t in tasks if t["id"] == b["task_id"]), on))
     for b in ranked:
         if len(out) >= 3:

@@ -1,8 +1,10 @@
 """可视化仪表盘：零依赖 HTTP 服务 + 单页前端。
 
-默认只监听 127.0.0.1。若要在手机上通过局域网访问：
-    LIFEOS_TOKEN=一串随机字符 python -m lifeos serve --host 0.0.0.0
-然后在手机打开 http://电脑IP:8765/?token=一串随机字符
+默认只监听 127.0.0.1。在 iPhone 上使用：python -m lifeos phone（见 docs/iPhone使用指南.md）。
+
+给 iPhone 快捷指令用的纯文本接口（请求头 X-LifeOS-Token 带上口令）：
+    POST /api/capture?format=text   body: {"text": "..."}   → 中文回执
+    GET  /api/today?format=text                              → 今日安排
 """
 
 import html
@@ -130,8 +132,22 @@ main{{max-width:960px;margin:0 auto;padding:24px 16px}} h1{{font-weight:600}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}}
 article{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}}
 h3{{margin:0 0 4px}} .price{{color:var(--accent);font-size:22px;font-weight:600;margin:0}} .muted{{color:var(--muted);font-size:14px;margin:4px 0}}
-</style></head><body><main><h1>📷 器材橱窗</h1><p class="muted">每一件都经过清洁、检测、实拍。共 {len(items)} 件在售。</p>
+</style></head><body><main><p><a href="/" style="color:var(--muted)">← LifeOS</a></p><h1>📷 器材橱窗</h1><p class="muted">每一件都经过清洁、检测、实拍。共 {len(items)} 件在售。</p>
 <div class="grid">{cards}</div></main></body></html>"""
+
+
+def _capture_text(conn, text: str) -> str:
+    if not text.strip():
+        return "没有收到内容"
+    return memory.describe(memory.capture(text, source="iphone", conn=conn))
+
+
+TEXT_ROUTES = {
+    "/api/today": lambda conn, q, body: planner.render(planner.plan(conn=conn)),
+    "/api/capture": lambda conn, q, body: _capture_text(conn, body.get("text") or q.get("text", [""])[0]),
+    "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
+        f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -165,6 +181,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, "需要 token".encode(), "text/plain; charset=utf-8")
         conn = db.connect()
         try:
+            if q.get("format", [""])[0] == "text" and url.path in TEXT_ROUTES:
+                return self._send(200, TEXT_ROUTES[url.path](conn, q, {}).encode(), "text/plain; charset=utf-8")
             if url.path.startswith("/api/"):
                 r = api_get(url.path, q, conn)
                 return self._json(r) if r is not None else self._json({"error": "not found"}, 404)
@@ -174,8 +192,10 @@ class Handler(BaseHTTPRequestHandler):
             f = (STATIC / name).resolve()
             if STATIC.resolve() not in f.parents or not f.is_file():
                 return self._send(404, b"not found", "text/plain")
-            ctype = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}.get(f.suffix, "application/octet-stream")
-            self._send(200, f.read_bytes(), ctype + "; charset=utf-8", set_cookie="token" in q)
+            ctype = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+                     ".css": "text/css; charset=utf-8", ".png": "image/png",
+                     ".webmanifest": "application/manifest+json"}.get(f.suffix, "application/octet-stream")
+            self._send(200, f.read_bytes(), ctype, set_cookie="token" in q)
         except Exception as e:  # 让前端看到错误，而不是空白
             self._json({"error": str(e)}, 500)
         finally:
@@ -192,6 +212,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid json"}, 400)
         conn = db.connect()
         try:
+            if parse_qs(url.query).get("format", [""])[0] == "text" and url.path in TEXT_ROUTES:
+                return self._send(200, TEXT_ROUTES[url.path](conn, {}, body).encode(), "text/plain; charset=utf-8")
             r = api_post(url.path, body, conn)
             self._json(r) if r is not None else self._json({"error": "not found"}, 404)
         except (KeyError, ValueError) as e:
@@ -202,9 +224,12 @@ class Handler(BaseHTTPRequestHandler):
             conn.close()
 
 
-def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
+def serve(host: str = "127.0.0.1", port: int = 8765, token: str | None = None) -> None:
+    global TOKEN
+    TOKEN = token or TOKEN
     if host not in ("127.0.0.1", "localhost") and not TOKEN:
         raise SystemExit("监听外部地址时必须设置 LIFEOS_TOKEN 环境变量，保护你的私人数据。")
     db.connect().close()
-    print(f"🌐 LifeOS 仪表盘：http://{host}:{port}/    器材橱窗：http://{host}:{port}/shop")
+    if host in ("127.0.0.1", "localhost"):
+        print(f"🌐 LifeOS 仪表盘：http://{host}:{port}/    器材橱窗：http://{host}:{port}/shop")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
