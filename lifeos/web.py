@@ -16,8 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, db, decisions, family, letter, meals, memory, now, photos, planner, relationship, review, shi,
-               tasks, yi)
+from . import (business, config, db, decisions, family, letter, meals, memory, mind, now, photos, planner, relationship, review,
+               shi, tasks, yi)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -68,6 +68,10 @@ def api_get(path: str, q: dict, conn):
         if one("q"):
             return memory.search(one("q"), int(one("limit", 30)), one("domain"), conn)
         return memory.timeline(int(one("days", 30)), conn)
+    if path == "/api/reflections":
+        return mind.reflections(conn)
+    if path == "/api/about":
+        return {**mind.about(conn, one("name", "")), "lines": mind.about_lines(conn, one("name", ""))}
     if path == "/api/graph":
         return memory.graph(conn)
     if path == "/api/items":
@@ -158,7 +162,7 @@ def api_post(path: str, body: dict, conn):
             memory.capture(her if "她" in her else f"她{her}", source="goodnight", conn=conn)
         if body.get("love_minutes"):
             review.log_time(conn, "关系", int(body["love_minutes"]), "晚安")
-        memory.consolidate(conn=conn)
+        mind.nightly(conn)
         return {"ok": True}
     if path == "/api/letter":
         return letter.write(conn)
@@ -171,7 +175,7 @@ def api_post(path: str, body: dict, conn):
             memory.capture(body["note"], source="checkin", conn=conn)
         if body.get("love_minutes"):
             review.log_time(conn, "关系", int(body["love_minutes"]), "签到")
-        memory.consolidate(conn=conn)
+        mind.nightly(conn)
         return r
     if path == "/api/timelog":
         review.log_time(conn, body["domain"], int(body["minutes"]), body.get("note", ""))
@@ -250,12 +254,11 @@ def ask_yi(conn, question: str) -> dict:
     """问一事：起卦 → 解读（有 Claude 时结合他的近况）→ 记录。"""
     r = yi.cast()
     reading = yi.interpret(r, question)
-    recent = db.rows(conn.execute("SELECT content FROM memories ORDER BY occurred_at DESC LIMIT 12"))
     feeling = conn.execute("SELECT feeling FROM states ORDER BY id DESC LIMIT 1").fetchone()
     context = "\n".join([f"- 最近的感受：{feeling[0] if feeling else '未知'}",
                          f"- 节气：{shi.solar_term()['name']}",
-                         "- 各领域之势：" + ("，".join(f"{k} {v:+}" for k, v in shi.momentum(conn).items()) or "无记录")]
-                        + [f"- {m['content']}" for m in recent])
+                         "- 各领域之势：" + ("，".join(f"{k} {v:+}" for k, v in shi.momentum(conn).items()) or "无记录"),
+                         mind.context(conn, question, k=10)])
     reading["ai"] = yi.ai_reflect(conn, r, question, context)
     cid = yi.save(conn, r, question, "ask")
     conn.execute("UPDATE casts SET reading = ? WHERE id = ?", (json.dumps(reading, ensure_ascii=False), cid))

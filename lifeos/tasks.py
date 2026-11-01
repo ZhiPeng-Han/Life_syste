@@ -10,6 +10,9 @@ def add(conn, title: str, domain: str = "生活维持", priority: int = 3, energ
            VALUES(?,?,?,?,?,?,?,?,?)""",
         (title, domain, project, priority, energy, minutes, due, source, db.now()),
     ).lastrowid
+    from . import mind
+
+    mind.link_task(conn, tid, title, project)
     conn.commit()
     return tid
 

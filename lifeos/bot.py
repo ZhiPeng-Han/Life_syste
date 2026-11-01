@@ -93,6 +93,14 @@ def due_pushes(conn, at: datetime) -> list[str]:
         if not db.get_meta(conn, key):
             db.set_meta(conn, key, True)
             out.append(now.morning(conn, at.date()))
+    # 每晚十点半之后，记忆中枢静静地巩固和反思一次（不推送）
+    if hm >= "22:30":
+        key = f"mind:nightly:{at.date().isoformat()}"
+        if not db.get_meta(conn, key):
+            db.set_meta(conn, key, True)
+            from . import mind
+
+            mind.nightly(conn)
     wd = cfg.get("weekly_digest", "")
     if wd:
         day, _, t = wd.partition(" ")

@@ -67,6 +67,7 @@ h2:first-child { margin-top: 4px; }
 button.btn, .btn { border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 6px 12px; border-radius: 8px; font: inherit; cursor: pointer; }
 button.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 button.btn.sm { padding: 2px 8px; font-size: 13px; }
+button.btn.ghost { background: transparent; color: var(--muted); border-color: transparent; padding-left: 0; }
 input, select, textarea { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
 form.inline { display: flex; gap: 8px; flex-wrap: wrap; }
 form.inline input { flex: 1 1 120px; }

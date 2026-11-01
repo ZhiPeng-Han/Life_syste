@@ -7,7 +7,7 @@
 from collections import Counter
 from datetime import date, timedelta
 
-from . import config, db, family, llm, now, shi, yi
+from . import config, db, family, llm, mind, now, shi, yi
 
 QUESTIONS = [
     "这周哪一刻，你最像你自己？",
@@ -30,7 +30,8 @@ def gather(conn, end: date) -> dict:
     states = db.rows(conn.execute(f"SELECT feeling, at FROM states WHERE {in_week.format(col='at')}", (s, e)))
     moments = db.rows(conn.execute(
         f"SELECT content, domain, mood, importance FROM memories WHERE {in_week.format(col='occurred_at')} "
-        "AND type NOT IN ('summary', 'prospective') AND status != 'archived' ORDER BY importance DESC, mood DESC LIMIT 8",
+        f"AND type NOT IN ('summary', 'prospective', 'reflection') AND status NOT IN {mind.INACTIVE_SQL} "
+        "ORDER BY importance DESC, mood DESC LIMIT 8",
         (s, e)))
     her = [m for m in moments if m["domain"] == "关系"]
     done = db.rows(conn.execute(
@@ -61,6 +62,7 @@ def gather(conn, end: date) -> dict:
         "lived": lived, "rituals_done": rituals_done, "places": places,
         "next_horizon": ahead[0] if ahead else None,
         "world": world,
+        "noticed": [r["content"] for r in mind.reflections(conn) if s <= r["occurred_at"][:10] <= e][:3],
     }
 
 
@@ -101,6 +103,8 @@ def _template(d: dict) -> str:
         L.append("")
     if d["world"]:
         L += ["## 外面的势", ""] + [f"- {'顺' if t['direction'] > 0 else '逆'}｜{t['title']}" for t in d["world"][:3]] + [""]
+    if d["noticed"]:
+        L += ["## 这周我注意到的", ""] + [f"- {x}" for x in d["noticed"]] + [""]
     if d["let_go"]:
         L += ["## 你放下的", "", "、".join(d["let_go"]) + "。放下也是一种选择。", ""]
     if len(L) <= 2:

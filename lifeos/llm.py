@@ -70,6 +70,18 @@ def core_memory() -> str:
     for path, limit in ((config.REPO_ROOT / "principles" / "人生导则.md", 3000), (config.home() / "我的说明书.md", 1500)):
         if path.exists():
             parts.append(path.read_text(encoding="utf-8")[:limit])
+    try:  # 记忆中枢：它从你的记忆里领悟到的、确认过的事实
+        from . import db, mind
+
+        conn = db.connect()
+        try:
+            k = mind.known(conn)
+        finally:
+            conn.close()
+        if k:
+            parts.append("它从记忆里知道的（领悟与事实）：\n" + k)
+    except Exception:  # noqa: BLE001 —— 核心记忆缺一块，不该让回应失败
+        pass
     if not parts:
         return ""
     return "\n\n<core_memory>\n以下是他自己写下的人生导则和系统对他的了解，回应时与之保持一致：\n" + "\n---\n".join(parts) + "\n</core_memory>"

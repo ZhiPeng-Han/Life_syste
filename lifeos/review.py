@@ -246,6 +246,11 @@ def user_manual(conn, save: bool = True) -> str:
     if mins:
         total = sum(mins.values())
         L += ["", "## 近 30 天时间去向", ""] + [f"- {k}：{v / 60:.1f}h（{v / total:.0%}）" for k, v in sorted(mins.items(), key=lambda x: -x[1])]
+    from . import mind
+
+    noticed = mind.reflections(conn)
+    if noticed:
+        L += ["", "## 系统从记忆里领悟到的（你说不对，它就不再提）", ""] + [f"- {r['content']}" for r in noticed[:10]]
     facts = db.rows(conn.execute("SELECT content FROM memories WHERE type = 'semantic' AND status = 'active' ORDER BY importance DESC LIMIT 20"))
     if facts:
         L += ["", "## 关于我的事实（来自记忆）", ""] + [f"- {f['content']}" for f in facts]

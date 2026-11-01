@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date
 
-from . import (__version__, business, cards, config, db, decisions, experiments, family, letter, photos, llm, meals, memory, now,
+from . import (__version__, business, cards, config, db, decisions, experiments, family, letter, photos, llm, meals, memory, mind, now,
                planner, relationship, review, seed, shi, tasks, yi)
 
 
@@ -120,6 +120,27 @@ def cmd_yi(a, conn):
         bar = "━━━━━━━" if v in (7, 9) else "━━━ ━━━"
         out(f"  {bar} {'○' if v == 9 else '×' if v == 6 else ''}")
     _print_reading(r["reading"])
+
+
+def cmd_mind(a, conn):
+    text = " ".join(a.text)
+    if a.action == "recall":
+        out(mind.context(conn, text) or "想不起和这件事相关的记忆。")
+    elif a.action == "about":
+        out("\n".join(mind.about_lines(conn, text)) or f"系统还不认识「{text}」。")
+        for m in mind.about(conn, text)["memories"][:10]:
+            out(f"  {m['occurred_at'][:10]} {m['content']}")
+    elif a.action == "reflect":
+        made = mind.reflect(conn, use_ai=a.ai or None)
+        out("\n".join(f"🧠 {x}" for x in made) or "暂时没有新的领悟。")
+    elif a.action == "wrong":
+        memory.confirm(a.id, keep=False, conn=conn)
+        out("好，这条领悟不再提。")
+    elif a.action == "reindex":
+        out(mind.reindex(conn))
+    else:
+        for r in mind.reflections(conn):
+            out(f"#{r['id']} {r['content']}")
 
 
 def cmd_shi(a, conn):
@@ -415,7 +436,10 @@ def cmd_manual(a, conn):
 
 
 def cmd_consolidate(a, conn):
-    out(memory.consolidate(a.day, conn) or "这一天没有记忆")
+    r = mind.nightly(conn, a.day)
+    out(r["summary"] or "这一天没有记忆")
+    for x in r["reflections"]:
+        out(f"🧠 {x}")
 
 
 def cmd_serve(a, conn):
@@ -464,6 +488,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--id", type=int)
     s.add_argument("text", nargs="*")
     s.set_defaults(fn=cmd_yi)
+
+    s = sub.add_parser("mind", help="记忆中枢：list 领悟 / recall 回忆 / about 一件事 / reflect / wrong --id / reindex")
+    s.add_argument("action", nargs="?", choices=["list", "recall", "about", "reflect", "wrong", "reindex"], default="list")
+    s.add_argument("--id", type=int)
+    s.add_argument("--ai", action="store_true", help="reflect 时让 Claude 也想一想")
+    s.add_argument("text", nargs="*")
+    s.set_defaults(fn=cmd_mind)
 
     s = sub.add_parser("shi", help="势：天下大势 list / add / fetch / retire")
     s.add_argument("action", nargs="?", choices=["list", "add", "fetch", "retire"], default="list")

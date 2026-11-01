@@ -45,6 +45,9 @@ def add_wish(conn, content: str, category: str = "other", person: str = "她", p
         "INSERT INTO wishes(person, content, category, mentioned_at, project, notes) VALUES(?,?,?,?,?,?)",
         (person, content, category, db.today(), project, notes),
     ).lastrowid
+    from . import mind
+
+    mind.link_wish(conn, wid, content, project)
     conn.commit()
     return wid
 
@@ -112,6 +115,11 @@ def ai_ideas(conn) -> str | None:
         + "\n\n近期和她有关的记忆：\n" + "\n".join(f"- {m['content']}" for m in recent)
         + "\n\n过去的惊喜及反馈：\n" + "\n".join(f"- {p['content']} → {p['feedback'] or ''}" for p in past)
     )
+    from . import mind
+
+    remembered = mind.context(conn, "她 喜欢 不喜欢 想要 " + " ".join(w["content"] for w in wishes(conn)), k=12)
+    if remembered:
+        prompt += "\n\n关于她，你还记得（包括事实和领悟）：\n" + remembered
     return llm.complete_text(
         "你是用户的关系顾问。给出本周 3 个惊喜方案（微/中/大各一个），每个包含：做什么、为什么她会喜欢（引用她说过的话）、"
         "准备清单。语气真诚，不要油腻；减肥相关只做支持，绝不评价她的身材；情话和表达留给用户自己。",

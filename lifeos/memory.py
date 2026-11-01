@@ -15,7 +15,22 @@ from . import business, config, db, extract, llm
 CONFIRM_THRESHOLD = 0.7
 
 
+def _occurred(m: dict, raw: str) -> str:
+    """事情发生的时候（而不是记下它的时候）。打算和事实不往回推。"""
+    from . import mind
+
+    if m.get("type") in ("prospective", "normative", "procedural"):
+        return db.now()
+    on = (m.get("occurred_on") or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", on) and on <= db.today():
+        return on + ("T" + db.now()[11:] if on == db.today() else "T12:00:00")
+    found = mind.when_of(m["content"]) or (mind.when_of(raw) if not on else None)
+    return found.isoformat(timespec="seconds") if found else db.now()
+
+
 def capture(text: str, source: str = "cli", conn=None) -> dict:
+    from . import mind
+
     conn = conn or db.connect()
     raw_id = conn.execute(
         "INSERT INTO raw_inputs(text, source, created_at) VALUES(?, ?, ?)", (text, source, db.now())
@@ -23,13 +38,22 @@ def capture(text: str, source: str = "cli", conn=None) -> dict:
     data = extract.extract(text)
     summary = {"engine": data.get("engine"), "memories": [], "tasks": [], "wishes": [], "items": []}
 
+    # 先登记愿望：它们带来的新主题（冰岛、陶艺）要让同一句话里的记忆也挂上去
+    for w in data.get("wishes", []):
+        wish_id = conn.execute(
+            "INSERT INTO wishes(person, content, category, mentioned_at) VALUES(?,?,?,?)",
+            (w.get("person") or "她", w["content"], w.get("category", "other"), db.today()),
+        ).lastrowid
+        mind.link_wish(conn, wish_id, w["content"])
+        summary["wishes"].append({"id": wish_id, "content": w["content"]})
+
     for m in data.get("memories", []):
         status = "needs_confirm" if m.get("confidence", 1) < CONFIRM_THRESHOLD else "active"
         mem_id = conn.execute(
             """INSERT INTO memories(raw_id, type, domain, content, occurred_at, importance, confidence, mood,
                                     status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (
-                raw_id, m["type"], m.get("domain"), m["content"], db.now(),
+                raw_id, m["type"], m.get("domain"), m["content"], _occurred(m, text),
                 max(1, min(10, m.get("importance", 5))), m.get("confidence", 1),
                 m.get("mood") or None, status, db.now(),
             ),
@@ -39,13 +63,17 @@ def capture(text: str, source: str = "cli", conn=None) -> dict:
             entity_ids.append(db.entity(conn, "domain", m["domain"]))
         for person in m.get("people", []):
             entity_ids.append(db.entity(conn, "person", person))
+        extra = [db.entity(conn, "topic", t.strip()) for t in m.get("topics", []) if 2 <= len(t.strip()) <= 12]
+        entity_ids += [e for e in mind.link_text(conn, "memories", mem_id, m["content"], extra) if e not in entity_ids]
         for eid in entity_ids:
             conn.execute("INSERT OR IGNORE INTO memory_entities VALUES(?, ?)", (mem_id, eid))
         # 共现即证据：同一条记忆里出现的实体之间关系加强
         for i, a in enumerate(entity_ids):
             for b in entity_ids[i + 1 :]:
                 db.relate(conn, a, b, "related", bump=0.5)
-        summary["memories"].append({"id": mem_id, "domain": m.get("domain"), "content": m["content"], "status": status})
+        replaced = mind.check_supersede(conn, mem_id)
+        summary["memories"].append({"id": mem_id, "domain": m.get("domain"), "content": m["content"], "status": status,
+                                    "replaced": replaced})
 
     for t in data.get("tasks", []):
         task_id = conn.execute(
@@ -56,14 +84,8 @@ def capture(text: str, source: str = "cli", conn=None) -> dict:
                 t.get("est_minutes") or 30, t.get("due") or None, "capture", db.now(),
             ),
         ).lastrowid
+        mind.link_task(conn, task_id, t["title"])
         summary["tasks"].append({"id": task_id, "title": t["title"], "due": t.get("due")})
-
-    for w in data.get("wishes", []):
-        wish_id = conn.execute(
-            "INSERT INTO wishes(person, content, category, mentioned_at) VALUES(?,?,?,?)",
-            (w.get("person") or "她", w["content"], w.get("category", "other"), db.today()),
-        ).lastrowid
-        summary["wishes"].append({"id": wish_id, "content": w["content"]})
 
     for it in data.get("items", []):
         if it["action"] == "buy":
@@ -89,6 +111,8 @@ def describe(r: dict) -> str:
     for i in r["items"]:
         verb = "收入" if i["action"] == "buy" else "卖出"
         lines.append(f"📷 {verb} {i['model']} {cur}{i['price']:.0f}" + (f" → {i['code']}" if i.get("code") else "（没找到对应库存）"))
+    if any(m.get("replaced") for m in r["memories"]):
+        lines.append("🔄 有一条旧的事实被更新了（旧的会保留为\"曾经是\"）")
     if any(m["status"] == "needs_confirm" for m in r["memories"]):
         lines.append("❓ 有内容 AI 不太确定，稍后在「记忆」页确认")
     return "\n".join(lines)
@@ -123,7 +147,7 @@ def score(mem: dict, query: str, at: datetime) -> float:
 
 def search(query: str = "", limit: int = 10, domain: str | None = None, conn=None, touch: bool = True) -> list[dict]:
     conn = conn or db.connect()
-    sql = "SELECT * FROM memories WHERE status != 'archived'"
+    sql = "SELECT * FROM memories WHERE status NOT IN ('archived', 'superseded', 'faded')"
     args: list = []
     if domain:
         sql += " AND domain = ?"
@@ -151,7 +175,8 @@ def timeline(days: int = 30, conn=None) -> list[dict]:
     since = (datetime.now() - timedelta(days=days)).isoformat()
     return db.rows(
         conn.execute(
-            "SELECT * FROM memories WHERE occurred_at >= ? AND status != 'archived' ORDER BY occurred_at DESC", (since,)
+            "SELECT * FROM memories WHERE occurred_at >= ? AND status NOT IN ('archived', 'superseded', 'faded') "
+            "AND type NOT IN ('summary', 'reflection') ORDER BY occurred_at DESC", (since,)
         )
     )
 
@@ -175,7 +200,8 @@ def consolidate(day: str | None = None, conn=None) -> dict | None:
     day = day or db.today()
     mems = db.rows(
         conn.execute(
-            "SELECT * FROM memories WHERE substr(occurred_at, 1, 10) = ? AND type != 'summary' AND status != 'archived'",
+            "SELECT * FROM memories WHERE substr(occurred_at, 1, 10) = ? AND type NOT IN ('summary', 'reflection') "
+            "AND status NOT IN ('archived', 'superseded', 'faded')",
             (day,),
         )
     )
@@ -191,6 +217,8 @@ def consolidate(day: str | None = None, conn=None) -> dict | None:
     if not text:
         dist = "、".join(f"{d} {n} 条" for d, n in by_domain.most_common())
         text = f"{day}：共 {len(mems)} 条记忆（{dist}）。要点：" + "；".join(m["content"] for m in top)
+    old = "SELECT id FROM memories WHERE type = 'summary' AND substr(occurred_at, 1, 10) = ?"
+    conn.execute(f"DELETE FROM memory_entities WHERE memory_id IN ({old})", (day,))
     conn.execute("DELETE FROM memories WHERE type = 'summary' AND substr(occurred_at, 1, 10) = ?", (day,))
     conn.execute(
         """INSERT INTO memories(type, domain, content, occurred_at, importance, tags, created_at)

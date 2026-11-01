@@ -94,10 +94,15 @@ async function doneTask(id) {
 
 // ------------------------------------------------------------------ 记忆
 async function renderMemory(el, q = "") {
-  const mems = await api("/api/memories" + (q ? `?q=${encodeURIComponent(q)}` : "?days=60"));
+  const [mems, noticed] = await Promise.all([
+    api("/api/memories" + (q ? `?q=${encodeURIComponent(q)}` : "?days=60")), api("/api/reflections")]);
   const pending = mems.filter((m) => m.status === "needs_confirm");
   el.innerHTML = `
+    <p class="small muted">记忆在后台记着、连着，影响此刻的建议、信、问卦和捡漏。这里只是让你想找什么时能找到。</p>
     <form class="inline" id="mem-search"><input name="q" value="${esc(q)}" placeholder="检索记忆：冰岛 / 50/1.4 / 她喜欢…"><button class="btn">检索</button></form>
+    ${!q && noticed.length ? `<h2>🧠 它注意到的</h2><div class="card">${noticed.slice(0, 5).map((r) => `
+      <div class="mem"><div>${esc(r.content)}</div>
+      <div class="row small" style="margin-top:4px"><button class="btn sm ghost" onclick="confirmMem(${r.id},false)">不对，别再提</button></div></div>`).join("")}</div>` : ""}
     ${pending.length ? `<h2>❓ AI 不太确定的记忆</h2>${pending.map((m) => `
       <div class="card">${esc(m.content)} <span class="chip">${esc(m.domain)}</span>
       <div class="row" style="margin-top:6px"><button class="btn sm" onclick="confirmMem(${m.id},true)">✓ 对</button><button class="btn sm" onclick="confirmMem(${m.id},false)">✗ 删掉</button></div></div>`).join("")}` : ""}
@@ -627,6 +632,7 @@ async function renderLetter(el) {
 async function renderMore(el) {
   el.innerHTML = `
     <div class="card more">
+      <a href="#memory">🧠 记忆 <span class="muted small">它在后台记着、连着；想找什么时再来</span></a>
       <a href="#today">🗓 今天的结构 <span class="muted small">需要的日子再打开</span></a>
       <a href="#graph">✨ 星图 <span class="muted small">人生各部分怎么连在一起</span></a>
       <a href="#review">📊 数据 <span class="muted small">时间账本、平衡轮、规律</span></a>
@@ -771,7 +777,7 @@ async function scanPhotos(e) {
 // ------------------------------------------------------------------ 框架
 const RENDER = { now: renderNow, pocket: renderPocket, her: renderHer, tianshi: renderTianshi, memory: renderMemory, gear: renderGear, letter: renderLetter, more: renderMore,
   today: renderToday, graph: renderGraph, review: renderReview, system: renderSystem };
-const TAB_OF = { today: "more", graph: "more", review: "more", system: "more" };
+const TAB_OF = { today: "more", graph: "more", review: "more", system: "more", memory: "more" };
 let current = "now";
 
 async function render(tab) {

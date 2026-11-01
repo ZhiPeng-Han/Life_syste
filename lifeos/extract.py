@@ -22,7 +22,7 @@ SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["content", "type", "domain", "importance", "confidence", "people", "mood"],
+                "required": ["content", "type", "domain", "importance", "confidence", "people", "mood", "occurred_on", "topics"],
                 "properties": {
                     "content": {"type": "string"},
                     "type": {"type": "string", "enum": MEMORY_TYPES},
@@ -31,6 +31,8 @@ SCHEMA = {
                     "confidence": {"type": "number"},
                     "people": {"type": "array", "items": {"type": "string"}},
                     "mood": {"type": "integer"},
+                    "occurred_on": {"type": "string"},
+                    "topics": {"type": "array", "items": {"type": "string"}},
                 },
             },
         },
@@ -95,6 +97,8 @@ def _system_prompt() -> str:
 - importance 1-10：涉及女友、重大金钱、健康、截止日期的更高；日常琐事低。
 - confidence 0-1：你对理解是否正确的把握，含糊时给低分，系统会请用户确认。
 - people：提到的人，女友统一写"她"。mood：文字里能看出用户心情时给 1-10，否则 0。
+- occurred_on：事情实际发生的日期 YYYY-MM-DD（"昨天""上周六"要换算成日期）；就是今天或看不出来就留空字符串。
+- topics：这件事涉及的具体事物，1-3 个简短名词（地点、项目、器材型号、爱好、作品），如"冰岛""陶艺""50/1.4"；没有就给空数组。
 - 只有用户明确要做/要记得做的事才放进 tasks；due 用 YYYY-MM-DD，没有就留空字符串；今天是 {date.today().isoformat()}。
 - 女友（或其他人）说想要/想做/希望的事放进 wishes，这是惊喜引擎的燃料，不要漏。
 - 买入(收)或卖出(出)相机器材放进 items；platform 不确定就留空字符串；defects 尽量用这些词：{defects}。
@@ -126,6 +130,11 @@ MODEL_RE = re.compile(
 )
 PRICE_RE = re.compile(r"(?<![\d./])(\d{2,6}(?:\.\d{1,2})?)(?![\d./]|mm)")
 PLATFORMS = ["闲鱼", "eBay", "ebay", "MPB", "mpb", "小红书", "转转", "Facebook", "Gumtree"]
+PAST_RE = re.compile(r"[了过](?![解])|刚才|刚刚")
+REMIND_RE = re.compile(r"^(记得|别忘了|提醒我|待办|todo)", re.I)
+GEAR_RE = re.compile(r"\d{2,3}\s?mm|\d{2,3}\s?/\s?\d(?:\.\d)?\b|\b[A-Z]{1,3}\d{1,2}[A-Z]{0,2}\d?\b|镜头|机身")
+FACT_RE = re.compile(r"(喜欢|不喜欢|讨厌|爱吃|不吃|过敏|习惯|总是|从不|最爱|不爱|不再|开始喜欢|怕)")
+EVENT_RE = re.compile(r"(今天|昨天|前天|今晚|昨晚|刚才|刚刚|上周|那天|这次)")
 TRAVEL_WORDS = ["去", "旅行", "旅游", "玩", "看极光", "冰岛", "海边"]
 HEALTH_WORDS = ["减肥", "瘦", "健身", "锻炼", "跑步", "体重"]
 PROJECT_WORDS = ["开发", "做一个", "平台", "一起做", "创业", "店"]
@@ -223,8 +232,14 @@ def extract_rules(text: str) -> dict:
         people = ["她"] if has_person else []
         if has_person:
             domain = "关系"
-        is_task = bool(TASK_RE.search(seg)) and not has_person
+        # "周日一起做了饭"是发生过的事，不是待办；"记得……"永远是待办
+        is_task = bool(TASK_RE.search(seg)) and not has_person and (
+            not PAST_RE.search(seg) or bool(REMIND_RE.search(seg)))
+        if not has_person and GEAR_RE.search(seg):
+            domain = "器材事业"
         mem_type = "prospective" if is_task else "episodic"
+        if not is_task and FACT_RE.search(seg) and not EVENT_RE.search(seg) and not WISH_RE.search(seg):
+            mem_type = "semantic"  # "她不吃香菜""我习惯早上画图"是关于人的稳定事实
         importance = 4 + (3 if domain == "关系" else 0) + (2 if PRICE_RE.search(seg) else 0)
 
         if has_person and WISH_RE.search(seg):
@@ -258,6 +273,8 @@ def extract_rules(text: str) -> dict:
                 "confidence": 0.75,
                 "people": people,
                 "mood": 0,
+                "occurred_on": "",
+                "topics": [],
             }
         )
     return out

@@ -299,6 +299,19 @@ MIGRATIONS = [
     );
     ALTER TABLE trends ADD COLUMN feed TEXT;
     """,
+    # v5：记忆中枢——任何记录（愿望、盼头、地点、器材、卦、任务）都能挂到同一个节点上；领悟与事实更新
+    """
+    CREATE TABLE links (
+        entity_id INTEGER REFERENCES entities(id),
+        ref TEXT NOT NULL,             -- wishes / horizons / places / items / casts / tasks
+        ref_id INTEGER NOT NULL,
+        PRIMARY KEY (entity_id, ref, ref_id)
+    );
+    CREATE INDEX idx_links_ref ON links(ref, ref_id);
+    ALTER TABLE memories ADD COLUMN rkey TEXT;            -- 领悟的键（同一规律只保留一条，持续更新）
+    ALTER TABLE memories ADD COLUMN superseded_by INTEGER; -- 被哪条新事实取代
+    CREATE INDEX idx_memories_when ON memories(occurred_at);
+    """,
 ]
 
 

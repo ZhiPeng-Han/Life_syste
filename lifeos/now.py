@@ -9,7 +9,7 @@
 import random
 from datetime import date, datetime, timedelta
 
-from . import config, db, family, llm, photos, planner, relationship, shi, tasks, yi
+from . import config, db, family, llm, mind, photos, planner, relationship, shi, tasks, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -73,6 +73,7 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
     ctx = planner.context(conn)
     stance = ctx["stance"]
     wx = shi.weather(conn, today)
+    pulse = mind.pulse(conn, at)
     out = []
     for t in db.rows(conn.execute("SELECT * FROM tasks WHERE status = 'todo'")):
         if minutes is not None and (t["est_minutes"] or 30) > minutes:
@@ -92,9 +93,11 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
         # 有期限的事是事实：天时不改变它，也不给它加注
         tian = 1.0 if urgent else yi.factor(stance, t["domain"], t["energy"], "task", t["skips"] or 0) * shi.factor(ctx["mom"], t["domain"])
         note = "" if urgent else _tian_note(stance, ctx["mom"], t["domain"], tian)
+        # 记忆的影响：最近常想起的事、她的愿望、和她之间的安静、常和累的日子一起出现的事
+        mf, mnote = (1.0, "") if urgent else mind.nudge(pulse, t["title"], t["domain"], feeling)
         out.append({"kind": "task", "task_id": t["id"], "title": t["title"], "domain": t["domain"],
-                    "minutes": t["est_minutes"] or 30, "score": score * tian,
-                    "reason": _task_reason(t, feeling, today) + note})
+                    "minutes": t["est_minutes"] or 30, "score": score * tian * mf,
+                    "reason": _task_reason(t, feeling, today) + note + (f"（{mnote}）" if mnote else "")})
     for i, o in enumerate(config.rules().get("now_options", [])):
         if feeling not in o.get("feelings", []):
             continue
@@ -195,7 +198,8 @@ def echo(conn, at: date | None = None) -> str | None:
     for label, delta in (("一年前的今天", 365), ("一个月前的今天", 30), ("一周前的今天", 7)):
         day = (today - timedelta(days=delta)).isoformat()
         for m in db.rows(conn.execute(
-            "SELECT content FROM memories WHERE substr(occurred_at,1,10) = ? AND type != 'summary' AND importance >= 5", (day,)
+            "SELECT content FROM memories WHERE substr(occurred_at,1,10) = ? AND type NOT IN ('summary', 'reflection') "
+            f"AND status NOT IN {mind.INACTIVE_SQL} AND importance >= 5", (day,)
         )):
             options.append(f"{label}：{m['content']}")
     for w in relationship.wishes(conn):
@@ -204,7 +208,8 @@ def echo(conn, at: date | None = None) -> str | None:
             options.append(f"{days} 天前她说「{w['content']}」，还记得吗？")
     cutoff = (today - timedelta(days=7)).isoformat()
     for m in db.rows(conn.execute(
-        "SELECT content, occurred_at FROM memories WHERE occurred_at < ? AND importance >= 7 AND type != 'summary' ORDER BY RANDOM() LIMIT 3",
+        "SELECT content, occurred_at FROM memories WHERE occurred_at < ? AND importance >= 7 "
+        f"AND type NOT IN ('summary', 'reflection') AND status NOT IN {mind.INACTIVE_SQL} ORDER BY RANDOM() LIMIT 3",
         (cutoff,),
     )):
         options.append(f"{m['occurred_at'][:10]}：{m['content']}")
@@ -263,6 +268,9 @@ def morning(conn, on: date | None = None) -> str:
     e = echo(conn, on)
     if e:
         lines.append(f"✨ {e}")
+    fresh = [r for r in mind.reflections(conn) if r["occurred_at"][:10] >= (on - timedelta(days=1)).isoformat()]
+    if fresh:
+        lines.append(f"🧠 我注意到：{fresh[0]['content']}")
     top = sorted(shi.trends(conn, 50), key=lambda t: -t["weight"])
     if top and top[0]["weight"] >= 1:
         t = top[0]
@@ -282,10 +290,10 @@ def ai_note(conn, feeling: str, note: str | None, suggestion: dict) -> str | Non
     """配置了 Claude 时，用一两句真正懂你的话代替模板理由。"""
     if not note:
         return None
-    recent = db.rows(conn.execute("SELECT content FROM memories ORDER BY occurred_at DESC LIMIT 15"))
+    remembered = mind.context(conn, f"{note} {suggestion['title']}", k=10)
     return llm.complete_text(
         "你是一个温和、克制的朋友，不是效率教练。用户此刻说了自己的状态。用一两句中文回应他的感受，"
         "然后自然地提一下这个建议（他可以不做）。不说教，不用感叹号，不超过 60 字。",
-        f"他的感受：{feeling}。他说：{note}\n建议：{suggestion['title']}\n最近的记忆：" + "；".join(m["content"] for m in recent),
+        f"他的感受：{feeling}。他说：{note}\n建议：{suggestion['title']}\n\n你记得的（只在自然时提起，不要罗列）：\n{remembered}",
         effort="low",
     )

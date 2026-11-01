@@ -24,6 +24,9 @@ def add_horizon(conn, title: str, when: str, with_her: bool = True, wish_id: int
         "INSERT INTO horizons(title, date, with_her, wish_id, created_at) VALUES(?,?,?,?,?)",
         (title, when, int(with_her), wish_id, db.now()),
     ).lastrowid
+    from . import mind
+
+    mind.link_horizon(conn, hid, title)
     conn.commit()
     return hid
 
@@ -151,6 +154,9 @@ def add_place(conn, name: str, visited_on: str | None = None, lat: float | None 
             lat, lon = found
     pid = conn.execute("INSERT INTO places(name, lat, lon, visited_on, with_her, note) VALUES(?,?,?,?,?,?)",
                        (name, lat, lon, visited_on, int(with_her), note)).lastrowid
+    from . import mind
+
+    mind.link_place(conn, pid, name)
     conn.commit()
     return {"id": pid, "name": name, "lat": lat, "lon": lon}
 

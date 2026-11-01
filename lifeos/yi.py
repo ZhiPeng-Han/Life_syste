@@ -259,6 +259,10 @@ def save(conn, r: dict, question: str | None, kind: str) -> int:
         (db.now(), db.today(), kind, question, json.dumps(r["lines"]), r["primary"]["n"],
          r["changed"]["n"] if r.get("changed") else None, r["primary"]["stance"]),
     ).lastrowid
+    if question:
+        from . import mind
+
+        mind.link_text(conn, "casts", cid, question)
     conn.commit()
     return cid
 

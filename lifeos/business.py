@@ -65,11 +65,14 @@ def add_item(conn, model, buy_price, platform=None, defects=None, condition=None
     if est_price is None:
         est_price, _ = estimate_price(conn, model, defects)
     code = _next_code(conn)
-    conn.execute(
+    row_id = conn.execute(
         """INSERT INTO items(code, model, serial, condition, defects, buy_price, buy_platform, bought_at, est_price)
            VALUES(?,?,?,?,?,?,?,?,?)""",
         (code, model, serial, condition, json.dumps(defects, ensure_ascii=False), buy_price, platform, db.today(), est_price),
-    )
+    ).lastrowid
+    from . import mind
+
+    mind.link_item(conn, row_id, model)
     item_id = db.entity(conn, "item", code, {"model": model})
     db.relate(conn, item_id, db.entity(conn, "domain", "器材事业"), "related", bump=0.5)
     conn.commit()
@@ -157,6 +160,12 @@ def evaluate_deal(conn, model: str, price: float, defects=None, platform=None, e
     stance = yi.today_stance(conn)
     if stance and yi.STANCES[stance].get("deal") and verdict != "跳过":
         reasons.append(f"☯ 今日卦象{yi.STANCES[stance]['desc']}：数据之外，问问自己是不是有点急。结论仍以数据为准。")
+    from . import mind
+
+    # 记忆：你以前对这个型号说过什么（只提醒，不改变结论）
+    seen = [m for m in mind.about(conn, normalize_model(model))["memories"] if m["type"] != "reflection"][:2]
+    for m in seen:
+        reasons.append(f"🧠 你记过（{m['occurred_at'][:10]}）：{m['content']}")
     mom = shi.momentum(conn).get("器材事业", 0)
     if mom <= -1.5:
         reasons.append("🌏 器材市场近期逆势：宜快进快出，少压库存。")

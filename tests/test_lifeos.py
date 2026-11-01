@@ -389,5 +389,164 @@ class MiscTest(unittest.TestCase):
         self.assertIn("周复盘", r["markdown"])
 
 
+
+class ExtractPastTest(unittest.TestCase):
+    def test_past_is_not_a_task_and_gear_goes_to_business(self):
+        r = extract.extract_rules("周日一起做了饭，很开心")
+        self.assertEqual((r["memories"][0]["type"], len(r["tasks"])), ("episodic", 0))
+        self.assertEqual(extract.extract_rules("记得明天给甲方打电话")["memories"][0]["type"], "prospective")
+        self.assertEqual(extract.extract_rules("那支 50/1.4 挂了好久都卖不动")["memories"][0]["domain"], "器材事业")
+        self.assertEqual(extract.extract_rules("她不吃香菜")["memories"][0]["type"], "semantic")
+
+
+class MindTest(unittest.TestCase):
+    """记忆中枢：时间、连接、回忆、领悟、更新，以及它对各处的影响。"""
+
+    def test_when_of_reads_event_time(self):
+        from datetime import datetime
+        from lifeos import mind
+
+        base = datetime(2026, 11, 4, 20, 0)  # 周三
+        self.assertEqual(mind.when_of("昨天和她去看了电影", base).date().isoformat(), "2026-11-03")
+        self.assertEqual(mind.when_of("三天前收了一支镜头", base).date().isoformat(), "2026-11-01")
+        self.assertEqual(mind.when_of("上周六去了海边", base).date().isoformat(), "2026-10-31")
+        self.assertEqual(mind.when_of("周一交了图", base).date().isoformat(), "2026-11-02")
+        self.assertEqual(mind.when_of("10月3号我们第一次约会", base).date().isoformat(), "2026-10-03")
+        self.assertIsNone(mind.when_of("下周一要交图", base))
+
+    def test_capture_uses_event_time(self):
+        conn = fresh()
+        memory.capture("昨天和她在泰晤士河边散步", conn=conn)
+        m = conn.execute("SELECT occurred_at, created_at FROM memories ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(m[0][:10], (date.today() - timedelta(days=1)).isoformat())
+        self.assertEqual(m[1][:10], date.today().isoformat())
+
+    def test_everything_about_one_thing_is_connected(self):
+        from lifeos import mind
+
+        conn = fresh()
+        memory.capture("她说冬天想去冰岛看极光", conn=conn)
+        family.add_horizon(conn, "冰岛", (date.today() + timedelta(days=90)).isoformat())
+        memory.capture("查了一下冰岛的租车价格，有点贵", conn=conn)
+        yi.save(conn, yi.cast([7, 7, 7, 7, 7, 7]), "冬天去冰岛合适吗", "ask")
+        a = mind.about(conn, "冰岛")
+        self.assertGreaterEqual(len(a["memories"]), 2)
+        self.assertTrue(any("冰岛" in w["content"] for w in a["wishes"]))
+        self.assertEqual(len(a["horizons"]), 1)
+        self.assertEqual(len(a["casts"]), 1)
+        lines = "\n".join(mind.about_lines(conn, "冰岛"))
+        self.assertIn("盼头", lines)
+        self.assertIn("冰岛基金", lines)  # 冰岛基金在配置里，自动连上
+
+    def test_recall_follows_links_not_just_words(self):
+        from lifeos import mind
+
+        conn = fresh()
+        memory.capture("她说想学陶艺", conn=conn)
+        memory.capture("路过一家陶艺工作室，周末有体验课", conn=conn)
+        for i in range(10):
+            memory.capture(f"建筑项目第 {i} 次开会", conn=conn)
+        got = [m["content"] for m in mind.recall(conn, "给她准备个惊喜，陶艺怎么样", k=3)]
+        self.assertTrue(any("陶艺工作室" in c for c in got))
+        ctx = mind.context(conn, "陶艺")
+        self.assertIn("她", ctx)
+
+    def test_reflection_on_repeated_topic_and_wrong_means_silence(self):
+        from lifeos import mind
+
+        conn = fresh()
+        memory.capture("她说想学陶艺", conn=conn)
+        memory.capture("她又提到陶艺课很治愈", conn=conn)
+        memory.capture("她给我看了一个陶艺视频", conn=conn)
+        made = mind.reflect(conn, use_ai=False)
+        self.assertTrue(any("陶艺" in x for x in made))
+        r = next(r for r in mind.reflections(conn) if "陶艺" in r["content"])
+        memory.confirm(r["id"], keep=False, conn=conn)  # "不对，别再提"
+        mind.reflect(conn, use_ai=False)
+        self.assertFalse(any("陶艺" in r["content"] for r in mind.reflections(conn)))
+
+    def test_her_quiet_reflection_and_nudge(self):
+        from lifeos import mind
+
+        conn = fresh()
+        old = (date.today() - timedelta(days=12)).isoformat()
+        memory.capture("和她吃了晚饭", conn=conn)
+        conn.execute("UPDATE memories SET occurred_at = ? WHERE domain = '关系'", (old + "T19:00:00",))
+        for i in range(6):
+            memory.capture(f"改了第 {i} 版立面", conn=conn)
+        made = mind.reflect(conn, use_ai=False)
+        self.assertTrue(any("没有一件和她有关" in x for x in made))
+        p = mind.pulse(conn)
+        self.assertGreaterEqual(p["her_quiet"], 5)
+        f, note = mind.nudge(p, "给她写张卡片", "关系", "平静")
+        self.assertGreater(f, 1)
+        self.assertIn("和她的事", note)
+        # 记下和她的事之后，这条领悟淡出
+        memory.capture("和她在河边散步", conn=conn)
+        mind.reflect(conn, use_ai=False)
+        self.assertFalse(any("没有一件和她有关" in r["content"] for r in mind.reflections(conn)))
+
+    def test_now_suggestion_mentions_her_wish(self):
+        conn = fresh()
+        memory.capture("她说想学陶艺", conn=conn)
+        from lifeos import tasks as tasks_mod
+
+        conn.execute("UPDATE tasks SET status = 'done'")
+        tasks_mod.add(conn, "查一下附近的陶艺体验课", "关系", 3, "low", 20)
+        cands = [c for c in now.candidates(conn, "平静") if c["kind"] == "task"]
+        self.assertIn("和她的愿望有关", cands[0]["reason"])
+
+    def test_new_fact_supersedes_old(self):
+        from lifeos import mind
+
+        conn = fresh()
+        memory.capture("她喜欢吃寿司", conn=conn)
+        r = memory.capture("其实她现在不喜欢吃寿司了", conn=conn)
+        self.assertTrue(r["memories"][0]["replaced"])
+        old = conn.execute("SELECT status, superseded_by FROM memories WHERE content = '她喜欢吃寿司'").fetchone()
+        self.assertEqual(old[0], "superseded")
+        self.assertNotIn("她喜欢吃寿司", mind.known(conn))
+
+    def test_deal_remembers_what_you_said_about_a_model(self):
+        conn = fresh()
+        memory.capture("那支 50/1.4 挂了一个月都卖不动", conn=conn)
+        r = business.evaluate_deal(conn, "50/1.4", 300, est=500)
+        self.assertTrue(any("卖不动" in x for x in r["reasons"]))
+
+    def test_core_memory_carries_reflections(self):
+        from lifeos import mind
+
+        conn = fresh()
+        for t in ("她说想学陶艺", "她又提到陶艺", "她在看陶艺视频"):
+            memory.capture(t, conn=conn)
+        mind.reflect(conn, use_ai=False)
+        conn.close()
+        self.assertIn("陶艺", llm.core_memory())
+
+    def test_letter_includes_what_it_noticed(self):
+        from lifeos import mind
+
+        conn = fresh()
+        for t in ("她说想学陶艺", "她又提到陶艺", "她在看陶艺视频"):
+            memory.capture(t, conn=conn)
+        mind.reflect(conn, use_ai=False)
+        self.assertIn("这周我注意到的", letter.render(conn))
+
+    def test_reindex_links_old_records(self):
+        from lifeos import mind
+
+        conn = fresh()
+        conn.execute("DELETE FROM links")
+        conn.execute("DELETE FROM memory_entities")
+        memory.capture("她说冬天想去冰岛看极光", conn=conn)
+        mind.nightly(conn)
+        n = mind.reindex(conn)
+        self.assertGreater(n["wishes"], 0)
+        mind.nightly(conn)  # 第二次晚安：重写日摘要不能被连接卡住
+        conn.execute("INSERT INTO memory_entities SELECT id, 1 FROM memories WHERE type = 'summary'")
+        mind.nightly(conn)
+        self.assertTrue(mind.about(conn, "冰岛")["wishes"])
+
+
 if __name__ == "__main__":
     unittest.main()
