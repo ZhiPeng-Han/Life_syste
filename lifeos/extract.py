@@ -228,7 +228,10 @@ def extract_rules(text: str) -> dict:
         importance = 4 + (3 if domain == "关系" else 0) + (2 if PRICE_RE.search(seg) else 0)
 
         if has_person and WISH_RE.search(seg):
-            content = PERSON_RE.sub("", seg, count=1).lstrip("说讲提到了过，, ")
+            # "她笑得很开心，说想学陶艺" → 只取"说"之后的愿望本身
+            said = seg.rfind("说")
+            content = seg[said + 1:] if said >= 0 else PERSON_RE.sub("", seg, count=1)
+            content = content.lstrip("说讲提到了过，, ")
             out["wishes"].append({"person": "她", "content": content or seg, "category": _wish_category(seg)})
             importance += 1
         if is_task:

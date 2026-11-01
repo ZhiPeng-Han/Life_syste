@@ -102,6 +102,8 @@ form.inline input { flex: 1 1 120px; }
 
 @media (max-width: 560px) {
   input, select, textarea { font-size: 16px; }
+  nav { gap: 2px; padding: 4px 8px 8px; }
+  nav button { padding: 6px 8px; }
   .timeline li { grid-template-columns: 64px 1fr auto; gap: 8px; padding: 8px; }
   .timeline .time { font-size: 12px; }
 }
@@ -162,3 +164,6 @@ svg.hex { width: 140px; flex: none; }
 .junzi-img { color: var(--muted); margin: 8px 0 4px; font-family: "Songti SC", "Noto Serif SC", serif; }
 .junzi-act { font-size: 19px; margin-bottom: 6px; font-family: "Songti SC", "Noto Serif SC", serif; }
 .zhuxi { border-left: 3px solid var(--accent); padding-left: 12px; margin: 10px 0; }
+
+.pocket li .row { flex-wrap: nowrap; flex: none; }
+blockquote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--love); color: var(--muted); }

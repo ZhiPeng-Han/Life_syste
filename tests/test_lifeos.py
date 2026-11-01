@@ -32,6 +32,11 @@ class ExtractTest(unittest.TestCase):
         self.assertEqual(r["tasks"][0]["title"], "把立面图发给甲方")
         self.assertEqual(r["tasks"][0]["due"], (date.today() + timedelta(days=1)).isoformat())
 
+    def test_wish_content_is_the_wish_itself(self):
+        self.assertEqual(extract.extract_rules("她笑得很开心，说想学陶艺")["wishes"][0]["content"], "想学陶艺")
+        self.assertEqual(extract.extract_rules("她说冬天想去冰岛看极光")["wishes"][0]["content"], "冬天想去冰岛看极光")
+        self.assertEqual(extract.extract_rules("她想和我一起开发相机转售平台")["wishes"][0]["content"], "想和我一起开发相机转售平台")
+
     def test_wish_categories(self):
         self.assertEqual(extract.extract_rules("她说想减肥")["wishes"][0]["category"], "health")
         self.assertEqual(extract.extract_rules("她想和我一起开发相机转售平台")["wishes"][0]["category"], "project")

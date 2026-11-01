@@ -65,18 +65,6 @@ async function renderToday(el) {
       <input name="due" type="date" style="max-width:150px">
       <button class="btn primary">添加</button>
     </form>
-    <h2>🌙 晚间签到（3 分钟）</h2>
-    <form class="card" id="checkin-form">
-      <div class="row">
-        <label>能量 <input name="energy" type="number" min="1" max="10" style="width:64px"></label>
-        <label>心情 <input name="mood" type="number" min="1" max="10" style="width:64px"></label>
-        <label>睡眠 <input name="sleep" type="number" step="0.5" style="width:70px">h</label>
-        <label>和她 <input name="love_minutes" type="number" style="width:70px">分钟</label>
-        <label><input name="exercised" type="checkbox"> 锻炼了</label>
-      </div>
-      <textarea name="note" rows="2" style="width:100%;margin-top:8px" placeholder="今天最值得记住的事？她提到了什么？"></textarea>
-      <button class="btn primary" style="margin-top:8px">完成签到</button>
-    </form>
     <h2>⏱ 记录时间</h2>
     <form class="inline card" id="time-form">
       <select name="domain">${META.domains.map((d) => `<option>${esc(d)}</option>`).join("")}</select>
@@ -89,15 +77,6 @@ async function renderToday(el) {
     await api("/api/tasks", Object.fromEntries(new FormData(e.target)));
     toast("任务已添加");
     render("today");
-  };
-  $("#checkin-form").onsubmit = async (e) => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target));
-    const num = (k) => (f[k] === "" || f[k] === undefined ? null : Number(f[k]));
-    await api("/api/checkin", { energy: num("energy"), mood: num("mood"), sleep: num("sleep"), love_minutes: num("love_minutes"),
-      exercised: f.exercised ? 1 : 0, note: f.note || null });
-    toast("签到完成，晚安 🌙");
-    e.target.reset();
   };
   $("#time-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -384,6 +363,7 @@ function md(text) {
     if (l.startsWith("# ")) html += `<h1>${esc(l.slice(2))}</h1>`;
     else if (l.startsWith("## ")) html += `<h2>${esc(l.slice(3))}</h2>`;
     else if (l.startsWith("- ")) html += `<div>• ${esc(l.slice(2))}</div>`;
+    else if (l.startsWith("> ")) html += `<blockquote>${esc(l.slice(2))}</blockquote>`;
     else if (l.trim()) html += `<p>${esc(l)}</p>`;
   }
   flush();
@@ -431,7 +411,7 @@ async function renderSystem(el) {
       ${a.promotions.map((p) => `<p>⬆️ 「${esc(p.category)}」可从 ${esc(p.from)} 升到 ${esc(p.to)}（命令行：lifeos autonomy set ${esc(p.category)} +1）</p>`).join("")}
       <p class="small muted">采纳率连续达标才会提议升级；任何一次"错得离谱"立即降级。感情和人生大事永远只做建议。</p></div>
     <h2>📝 它给过的建议（想反馈就反馈，不想也没关系）</h2>
-    ${a.pending.map((s) => `<div class="card"><span class="chip">${esc(s.category)}</span> ${esc(s.content).slice(0, 300)}<div class="row" style="margin-top:6px">${fbButtons(s.id)}</div></div>`).join("") || '<p class="muted">没有待反馈的建议。</p>'}
+    ${a.pending.map((s) => `<div class="card"><span class="chip">${esc((a.overview.find((o) => o.category === s.category) || {}).desc || s.category)}</span> ${esc(s.content).slice(0, 300)}<div class="row" style="margin-top:6px">${fbButtons(s.id)}</div></div>`).join("") || '<p class="muted">没有待反馈的建议。</p>'}
     <h2>🍳 本周菜单（🥗 = 轻食，支持她的健康目标）</h2>
     <div class="card">${menu.days.map((d) => `<div>${d.day} ${esc(d.dish)} ${d.light ? "🥗" : ""}</div>`).join("")}
       <p class="small muted">🛒 ${menu.shopping.map(esc).join("、")}</p></div>`;
