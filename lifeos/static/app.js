@@ -277,9 +277,35 @@ async function sellItem(code) {
 
 // ------------------------------------------------------------------ 她
 async function renderHer(el) {
-  const d = await api("/api/her");
+  const [d, f] = await Promise.all([api("/api/her"), api("/api/family")]);
   const statuses = ["想法", "规划中", "进行中", "已实现"];
+  const hz = f.horizons;
   el.innerHTML = `
+    <div class="card star"><div class="small muted">⭐ 我们的北极星</div>
+      <div class="star-text">${esc(f.north_star.text) || '<span class="muted">还没写。找一个安静的晚上，和她一起写一句。</span>'}</div>
+      <button class="btn sm" onclick="editStar()">${f.north_star.text ? "重写" : "写下"}</button>
+      ${f.north_star.history.length ? `<details><summary class="small muted">过去的北极星</summary>${f.north_star.history.map((x) => `<p class="small muted">${esc(x.text)}（至 ${x.until}）</p>`).join("")}</details>` : ""}</div>
+    <h2>✨ 地平线上</h2>
+    ${hz.to_reflect.map((x) => `<div class="card"><b>${esc(x.title)}</b> 已经过去了。怎么样？
+      <form class="inline" onsubmit="liveHorizon(event, ${x.id})"><input name="r" placeholder="一句话，会变成一段记忆"><button class="btn primary">记下</button></form></div>`).join("")}
+    <div class="horizon big">${hz.ahead.map((x) => `<div><span class="hz-days">${x.days_left}</span><span class="hz-title">天后 · ${esc(x.title)}<br><span class="small muted">${x.date}</span></span></div>`).join("") ||
+      `<p class="muted">地平线上空着。期待本身就是幸福的很大一部分。可以是：${hz.ideas.map(esc).join("；")}</p>`}</div>
+    <form class="inline card" id="horizon-form"><input name="title" placeholder="一件你们期待的事" required>
+      <input name="date" type="date" required style="max-width:160px"><button class="btn primary">放上地平线</button></form>
+    <h2>🕯 我们的仪式</h2>
+    <div class="card">${f.rituals.map((r) => `<div class="mem row" style="justify-content:space-between"><span>${esc(r.name)} <span class="small muted">${esc(r.when)}${r.note ? " · " + esc(r.note) : ""}</span></span>
+        <span>${r.done_this_period ? `<span class="small muted">这一期做过了</span>` : `<button class="btn sm" onclick="logRitual(${r.id})">做了</button>`}</span></div>`).join("")}
+      <p class="small muted">不打卡，不计算断了几次。仪式是"想要做"，不是"必须做"。</p>
+      <form class="inline" id="ritual-form"><input name="name" placeholder="新的仪式" required>
+        <select name="cadence"><option value="weekly">每周</option><option value="monthly">每月</option><option value="yearly">每年</option></select>
+        <select name="weekday">${["一", "二", "三", "四", "五", "六", "日"].map((x, i) => `<option value="${i + 1}">周${x}</option>`).join("")}</select>
+        <button class="btn">添加</button></form></div>
+    <h2>📍 我们去过的地方</h2>
+    <div class="card"><div id="map"></div>
+      ${f.places.map((p) => `<div class="small">${p.visited_on || ""} ${esc(p.name)}${p.note ? " · " + esc(p.note) : ""}</div>`).join("") || '<p class="muted small">还没有。冰岛之后，这张地图会很好看。</p>'}
+      <form class="inline" id="place-form" style="margin-top:8px"><input name="name" placeholder="地名，如 雷克雅未克" required>
+        <input name="visited_on" type="date" style="max-width:160px"><button class="btn">添加</button></form></div>
+    <h2>🌙 这周在一起</h2>
     <div class="grid"><div class="stat"><b>${d.love_hours}h</b><span>这周在一起的时间</span></div>
       ${d.dates.slice(0, 2).map((x) => `<div class="stat"><b>${x.days_left} 天</b><span>${esc(x.name)} ${x.date}</span></div>`).join("")}</div>
     <h2>💡 惊喜建议（微 / 中 / 大）</h2>
@@ -301,7 +327,44 @@ async function renderHer(el) {
         <input name="month" type="number" min="1" max="12" placeholder="月" required style="max-width:70px">
         <input name="day" type="number" min="1" max="31" placeholder="日" required style="max-width:70px"><button class="btn">添加</button></form></div>`;
   $("#wish-form").onsubmit = async (e) => { e.preventDefault(); await api("/api/wishes", Object.fromEntries(new FormData(e.target))); render("her"); };
+  $("#horizon-form").onsubmit = async (e) => { e.preventDefault(); await api("/api/horizons", Object.fromEntries(new FormData(e.target))); toast("✨ 放上地平线了"); render("her"); };
+  $("#ritual-form").onsubmit = async (e) => { e.preventDefault(); await api("/api/rituals", Object.fromEntries(new FormData(e.target))); render("her"); };
+  $("#place-form").onsubmit = async (e) => { e.preventDefault(); const r = await api("/api/places", Object.fromEntries(new FormData(e.target))); toast(r.lat ? `📍 ${r.name}` : "📍 记下了（没找到坐标）"); render("her"); };
+  drawMap(f.places.filter((p) => p.lat !== null));
   $("#date-form").onsubmit = async (e) => { e.preventDefault(); await api("/api/dates", Object.fromEntries(new FormData(e.target))); render("her"); };
+}
+async function editStar() {
+  const t = prompt("你们的北极星（一句话，和她一起写）");
+  if (t) { await api("/api/northstar", { text: t }); render("her"); }
+}
+async function liveHorizon(e, id) {
+  e.preventDefault();
+  await api(`/api/horizons/${id}/live`, { reflection: new FormData(e.target).get("r") });
+  toast("记下了。下一个盼头是什么？");
+  render("her");
+}
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(css);
+    const js = document.createElement("script");
+    js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = ok; js.onerror = fail;
+    document.head.appendChild(js);
+  });
+}
+async function drawMap(points) {
+  const box = $("#map");
+  if (!points.length) { box.style.display = "none"; return; }
+  try { await loadLeaflet(); } catch { box.innerHTML = '<p class="small muted">地图需要联网加载。</p>'; return; }
+  const map = L.map(box, { scrollWheelZoom: false });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
+  const ll = points.map((p) => [p.lat, p.lon]);
+  points.forEach((p) => L.circleMarker([p.lat, p.lon], { radius: 7, color: "#c2416b" }).addTo(map).bindPopup(`${esc(p.name)}<br>${p.visited_on || ""}`));
+  if (ll.length > 1) L.polyline(ll, { color: "#c2416b", weight: 1, dashArray: "4 4" }).addTo(map);
+  ll.length === 1 ? map.setView(ll[0], 6) : map.fitBounds(ll, { padding: [24, 24] });
 }
 async function wishStatus(id, status) { await api(`/api/wishes/${id}`, { status }); toast(status === "已实现" ? "🎉 又实现了她的一个愿望" : "已更新"); }
 
@@ -379,14 +442,19 @@ async function renderSystem(el) {
 const NOW = { feeling: null, minutes: null, seen: [], note: "" };
 const MINUTES = [[15, "一会儿"], [45, "半小时多"], [120, "一两个小时"], ["", "不确定"]];
 
+let HOME = { skip_reasons: [] };
 async function renderNow(el) {
   const h = await api("/api/home");
+  HOME = h;
   const evening = h.hour >= 20 || h.hour < 3;
   const morning = h.hour >= 5 && h.hour < 11;
   const anchors = h.anchors.filter((a) => !a.includes("💼"));
   el.innerHTML = `
     <p class="greet">${esc(h.greeting)} ${esc(h.term.name)}时节${h.weather ? ` · ${h.weather.icon} ${esc(h.weather.label)} ${h.weather.tmin}–${h.weather.tmax}°C` : ""}</p>
     <p class="small"><a href="#tianshi">${h.cast ? `☯ ${h.cast.symbol} ${esc(h.cast.full)} · ${esc(h.cast.stance)}` : "☯ 今日还未起卦 →"}</a></p>
+    ${horizonStrip(h.horizons)}
+    ${h.rituals.map((r) => `<div class="ritual">🕯 ${r.today ? "今天是" : "这一期还没"}「${esc(r.name)}」
+      <button class="btn sm" onclick="logRitual(${r.id})">做了</button></div>`).join("")}
     <h1 class="ask">你现在感觉怎么样？</h1>
     <div class="feelings">${Object.entries(h.feelings).map(([f, i]) =>
       `<button class="feel ${NOW.feeling === f ? "on" : ""}" data-f="${f}"><span>${i}</span>${f}</button>`).join("")}</div>
@@ -394,7 +462,10 @@ async function renderNow(el) {
       `<button class="chip-btn ${String(NOW.minutes ?? "") === String(m) ? "on" : ""}" data-m="${m}">${label}</button>`).join("")}</div>
     <input id="now-note" value="${esc(NOW.note)}" placeholder="想说点什么也可以（可不填）">
     <div id="now-card">${NOW.feeling ? "" : '<p class="muted small" style="margin-top:14px">点一下你的感受，我给你一个可能性。或者，什么都不点。</p>'}</div>
-    ${h.echo ? `<div class="echo">✨ ${esc(h.echo)}</div>` : ""}
+    ${h.echo || h.photos.length ? `<div class="echo">${h.echo ? `✨ ${esc(h.echo)}` : ""}
+      ${h.photos.length ? `<div class="photos">${h.photos.map((p) => `<figure><img src="/photo/${p.id}" loading="lazy" alt="">
+        <figcaption>${p.years_ago} 年前的今天</figcaption></figure>`).join("")}</div>` : ""}</div>` : ""}
+    <p class="small"><a href="#" onclick="drawJunzi(event)">卡住了？抽一张君子卡</a></p><div id="junzi"></div>
     ${morning ? `<div class="quiet"><span class="muted small">昨晚睡了大概：</span>${[5, 6, 7, 8, 9].map((x) => `<button class="chip-btn" data-sleep="${x}">${x}h</button>`).join("")}</div>` : ""}
     <div class="quiet">
       ${anchors.length ? `<p>🌿 今天的节律：${anchors.map(esc).join("；")}</p>` : ""}
@@ -452,12 +523,58 @@ async function nowDone(id) { await api(`/api/tasks/${id}/done`, {}); toast("✓ 
 async function nowSkip(id, key) {
   const r = await api("/api/now/skip", { task_id: id });
   NOW.seen.push(key);
+  if (!r.ask_let_go) {
+    // 可选：为什么现在不想？完全可以跳过
+    $("#now-card").innerHTML = `<div class="card now"><p class="muted">好。想说说为什么吗？（可以不说）</p>
+      <div class="row">${HOME.skip_reasons.map((x) => `<button class="chip-btn" onclick="skipWhy(${id}, '${x}')">${x}</button>`).join("")}
+      <button class="btn sm" onclick="ask(false)">跳过，换一个</button></div><div id="skip-why"></div></div>`;
+    return;
+  }
   if (r.ask_let_go) {
     $("#now-card").innerHTML = `<div class="card now"><div class="sug">这件事你已经跳过 ${r.skips} 次了。</div>
       <p class="muted">它还重要吗？放下不是失败，是选择。</p>
       <div class="row"><button class="btn primary" onclick="letGo(${id}, true)">🍃 放下它</button><button class="btn" onclick="ask(false)">留着，以后再说</button></div></div>`;
   } else ask(false);
 }
+async function skipWhy(id, reason) {
+  const needStep = reason === "太大了" || reason === "不知道从哪开始";
+  if (needStep) {
+    $("#skip-why").innerHTML = `<p class="small">${reason === "太大了" ? "那就拆小：它的第一小步是什么？" : "写下你能想到的第一个动作，哪怕是\"打开文件\"。"}</p>
+      <form class="inline" id="step-form"><input name="step" placeholder="第一小步" required><button class="btn primary">放进口袋</button></form>`;
+    $("#step-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await api("/api/now/skip_reason", { task_id: id, reason, first_step: new FormData(e.target).get("step") });
+      toast(r.reply); ask(false);
+    };
+    return;
+  }
+  const r = await api("/api/now/skip_reason", { task_id: id, reason });
+  toast(r.reply);
+  ask(false);
+}
+async function drawJunzi(e) {
+  e.preventDefault();
+  const c = await api("/api/junzi");
+  $("#junzi").innerHTML = junziCard(c);
+}
+function junziCard(c) {
+  return `<div class="junzi"><div class="junzi-sym">${c.symbol}</div><div class="junzi-img">${esc(c.image)}</div>
+    <div class="junzi-act">${esc(c.act)}</div><div class="small muted">${esc(c.plain)}</div></div>`;
+}
+function horizonStrip(hz) {
+  if (hz.ahead.length) {
+    return `<div class="horizon">${hz.ahead.slice(0, 2).map((x) => `<a href="#her"><span class="hz-days">${x.days_left === 0 ? "今天" : x.days_left}</span>
+      <span class="hz-title">${x.days_left === 0 ? "" : "天后 · "}${esc(x.title)}</span></a>`).join("")}</div>`;
+  }
+  return hz.empty_soon ? `<p class="small"><a href="#her">✨ 地平线上空了。放一件期待的事？→</a></p>` : "";
+}
+async function logRitual(id) {
+  const note = prompt("怎么样？（可以不写）") ?? "";
+  await api(`/api/rituals/${id}/log`, { note });
+  toast("🕯");
+  render(current);
+}
+
 async function letGo(id, thenAsk) {
   await api("/api/now/letgo", { task_id: id });
   toast("🍃 放下了。");
@@ -535,6 +652,7 @@ async function renderMore(el) {
       <a href="#review">📊 数据 <span class="muted small">时间账本、平衡轮、规律</span></a>
       <a href="#system">🤝 交给它的小事 <span class="muted small">菜单、建议、放权</span></a>
       <a href="/shop">📷 器材橱窗 <span class="muted small">给她看的平台雏形</span></a>
+      <a href="#" onclick="scanPhotos(event)">🖼 索引照片 <span class="muted small">用于"那年今日"（rules.toml [photos]）</span></a>
     </div>
     <p class="small muted">这个系统的原则：它替你记住，在你需要时帮你做个小决定；其余时候，它安静。你是生活的主体。</p>`;
 }
@@ -560,8 +678,14 @@ function readingHtml(r) {
   const rd = r.reading;
   return `<div class="row" style="align-items:flex-start;gap:16px">${hexSvg(r.lines)}
       <div style="flex:1;min-width:180px"><div class="hex-title">${esc(rd.title)}</div>
+      ${rd.question ? `<p class="small muted">所问：${esc(rd.question)}</p>` : ""}
+      <p class="xiang">${esc(rd.guaci)}</p>
       <p class="xiang">《象》曰：${esc(rd.xiang)}</p><p>${esc(rd.plain)}</p>
       <span class="chip">${esc(rd.stance_text)}</span></div></div>
+    <div class="zhuxi"><p class="small muted">${esc(rd.zhuxi.rule)}</p>
+      ${rd.zhuxi.main.filter((m) => m.text !== rd.guaci).map((m) => `<p class="xiang"><b>${esc(m.text)}</b>${m.xiang ? `<br><span class="small">《象》曰：${esc(m.xiang)}</span>` : ""}
+        ${m.wuying ? `<br><span class="small muted">底本（武英殿本）：${esc(m.wuying)}</span>` : ""}</p>`).join("")}
+      ${rd.zhuxi.aux.map((m) => `<p class="xiang small">${esc(m.text)}${m.wuying ? `<br><span class="muted">底本：${esc(m.wuying)}</span>` : ""}</p>`).join("")}</div>
     <p class="small muted">${esc(rd.change)}</p>
     ${rd.trend ? `<p class="small">${esc(rd.trend)}</p>` : ""}
     ${rd.ai ? `<div class="echo">${esc(rd.ai).replace(/\n/g, "<br>")}</div>` : ""}
@@ -588,8 +712,14 @@ async function renderTianshi(el) {
     <h2>☯ 今日之卦</h2>
     <div class="card" id="day-cast">${d.today ? readingHtml(d.today) : `
       <p>心里想着今天，静一静，然后起一卦。</p>
+      <input id="intention" placeholder="此刻心里想着什么？（可以不写）" style="width:100%;margin-bottom:8px">
       <p class="small muted">三枚铜钱，掷六次。一天只起一次：命不能重抽。</p>
       <button class="btn primary" id="cast-day">起卦</button>`}</div>
+    ${d.almanac ? `<p class="small muted">📜 ${esc(d.almanac.lunar)}　宜：${d.almanac.yi.map(esc).join(" ")}　忌：${d.almanac.ji.map(esc).join(" ")}
+      <br>（黄历仅作文化参考，不进入任何建议）</p>` : ""}
+    <h2>🀄 君子卡</h2>
+    <div class="card"><p class="small muted">做设计、剪视频、想事情卡住了，抽一张。六十四条《象传》，每一条都是"在这种处境下，君子怎么做"。</p>
+      <div id="junzi-t"></div><button class="btn" onclick="drawJunziT()">抽一张</button></div>
     <h2>🤔 问一事</h2>
     <form class="card" id="ask-form">
       <textarea name="question" rows="2" style="width:100%" placeholder="心里犹豫的一件事，比如：要不要这个月把器材生意做大一点？" required></textarea>
@@ -602,7 +732,7 @@ async function renderTianshi(el) {
       <div class="bar"><i style="width:${Math.min(Math.abs(v) / 6 * 100, 100)}%;background:${v > 0 ? "var(--ok)" : "var(--bad)"}"></i></div>`).join("")}</div>` : ""}
     <div class="card">${d.trends.map((t) => `<div class="mem"><div class="row small muted"><span class="chip">${dir[t.direction]}${t.strength}</span>
         <span>${esc(t.domain || "—")}</span><span>${t.observed_at.slice(0, 10)}</span>
-        <button class="btn sm" onclick="retireTrend(${t.id})">过时了</button></div>
+        <button class="btn sm" onclick="keepTrend(${t.id})">有用</button><button class="btn sm" onclick="retireTrend(${t.id})">过时了</button></div>
         <div>${esc(t.title)}</div>${t.summary ? `<div class="small muted">${esc(t.summary)}</div>` : ""}</div>`).join("") ||
         '<p class="muted">还没有记录。你观察到的任何趋势都可以记下来：行业冷暖、器材行情、物价、新工具……</p>'}
       <form class="inline" id="trend-form" style="margin-top:10px">
@@ -612,14 +742,21 @@ async function renderTianshi(el) {
         <select name="strength">${[1, 2, 3, 4, 5].map((n) => `<option ${n === 2 ? "selected" : ""}>${n}</option>`).join("")}</select>
         <button class="btn">记下</button></form>
       <button class="btn sm" id="fetch-trends" style="margin-top:8px">看看外面（新闻源）</button></div>
+    ${d.stats.n ? `<h2>📊 起卦记录</h2><div class="card small">
+      共 ${d.stats.n} 卦 · 平均变爻 ${d.stats.moving_avg}（随机期望 ${d.stats.moving_expected}）<br>
+      ${d.stats.stances.filter((x) => x.seen || x.expected >= 0.5).map((x) => `${esc(x.desc)} ${x.seen}（期望 ${x.expected}）`).join(" · ")}
+      <p class="muted">${esc(d.stats.note)}</p></div>` : ""}
     <h2>📜 过去的卦</h2>
     <div class="card">${d.history.map((c) => `<div class="mem"><div class="small muted">${c.day} · ${esc(c.question || "今日之卦")}</div>
         <div>${esc(c.title)}</div>
         ${c.outcome ? `<div class="small">后来：${esc(c.outcome)}</div>` : `<button class="btn sm" onclick="castOutcome(${c.id})">后来怎样了？</button>`}</div>`).join("") ||
         '<p class="muted">还没有起过卦。</p>'}</div>
-    <p class="small muted">卦是一面镜子，不是预言；势是风向，不是命令。它们只会让建议轻一点或重一点，从不改变事实。影响程度可在 rules.toml 的 [yi] weight 调整。</p>`;
+    <p class="small muted">卦是一面镜子，不是预言；势是风向，不是命令。你标记"有用 / 过时了"，会调整之后从哪些新闻源取多少内容。它们只会让建议轻一点或重一点，从不改变事实。影响程度可在 rules.toml 的 [yi] weight 调整。</p>`;
   const cb = $("#cast-day");
-  if (cb) cb.onclick = async () => { const r = await api("/api/yi/today", {}); await revealCast($("#day-cast"), r); };
+  if (cb) cb.onclick = async () => {
+    const r = await api("/api/yi/today", { intention: $("#intention").value });
+    await revealCast($("#day-cast"), r);
+  };
   $("#ask-form").onsubmit = async (e) => {
     e.preventDefault();
     const q = new FormData(e.target).get("question");
@@ -636,10 +773,19 @@ async function renderTianshi(el) {
     render("tianshi");
   };
 }
+async function drawJunziT() { $("#junzi-t").innerHTML = junziCard(await api("/api/junzi")); }
+async function keepTrend(id) { await api(`/api/trends/${id}/keep`, {}); toast("记下了：这个来源更值得看"); render("tianshi"); }
 async function retireTrend(id) { await api(`/api/trends/${id}/retire`, {}); render("tianshi"); }
 async function castOutcome(id) {
   const o = prompt("后来怎样了？（这是写给自己的）");
   if (o) { await api("/api/yi/outcome", { id, outcome: o }); render("tianshi"); }
+}
+
+async function scanPhotos(e) {
+  e.preventDefault();
+  toast("索引中…");
+  const r = await api("/api/photos/scan", {});
+  toast(r.folders.length ? `新增 ${r.added} 张，共 ${r.total} 张` : "先在 rules.toml 的 [photos] folders 里填照片文件夹");
 }
 
 // ------------------------------------------------------------------ 框架

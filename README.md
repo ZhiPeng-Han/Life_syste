@@ -1,4 +1,4 @@
-# Life_syste · LifeOS v0.3
+# Life_syste · LifeOS v0.4
 
 一个陪你生活的 AI 系统。它**替你记住**（杂事、她说过的话、发生过的美好），在你**需要时帮你做个小决定**；其余时候，它安静。
 
@@ -24,6 +24,8 @@ python -m lifeos now         # 此刻：你现在感觉怎么样？
 python -m lifeos serve       # 打开 http://127.0.0.1:8765 可视化仪表盘
 ```
 
+可选：精确节气与农历 `pip install lunar_python`；照片回响在 `config/rules.toml` 的 `[photos]` 填文件夹后运行 `python -m lifeos photos`。
+
 启用 Claude（抽取更准、复盘有 AI 教练点评、惊喜方案更个性化）：
 
 ```bash
@@ -43,6 +45,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | 遇到捡漏 | 收不收？ | `python -m lifeos deal --model "50/1.4" --price 180 --defects 雾` |
 | 早上 | 一段问候：节气、天气、今日之卦、大势 | `python -m lifeos morning` |
 | 想起一卦 | 今日之卦，或问一件犹豫的事 | `python -m lifeos yi` / `yi --ask "…"` |
+| 有一件期待的事 | 放上地平线，倒计时 | `python -m lifeos horizon add 冰岛 --date 2027-02-14` |
+| 做了一个仪式 | 记一句（不打卡） | `python -m lifeos ritual log 1 做了番茄牛腩` |
+| 和她一起 | 写下 / 重写你们的北极星 | `python -m lifeos northstar 一句话` |
+| 卡住了 | 抽一张君子卡 | `python -m lifeos junzi` |
 | 观察到某种趋势 | 记下天下大势（顺 / 逆 / 观） | `python -m lifeos shi add 二手镜头涨价 -d 器材事业 --direction 1` |
 | 周末 | 一封写给这一周的你的信 | `python -m lifeos letter` |
 | 交图、考试前 | 这时才需要时间表 | `python -m lifeos today` |
@@ -51,7 +57,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 <summary>全部命令</summary>
 
 ```
-init / phone / add / now / pocket / letgo / morning / letter / yi / shi / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
+init / phone / add / now / pocket / letgo / morning / letter / yi / shi / horizon / ritual / northstar / place / photos / junzi / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
 item（库存：add/set/sell/list/stats）/ deal（捡漏评估）/ her / wish / date / menu
 card（Part 3 卡片）/ exp（个人实验）/ decide（决策日志）/ review / manual / consolidate / serve / bot
 ```

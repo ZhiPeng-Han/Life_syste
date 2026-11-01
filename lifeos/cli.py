@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date
 
-from . import (__version__, business, cards, config, db, decisions, experiments, letter, llm, meals, memory, now,
+from . import (__version__, business, cards, config, db, decisions, experiments, family, letter, photos, llm, meals, memory, now,
                planner, relationship, review, seed, shi, tasks, yi)
 
 
@@ -82,7 +82,11 @@ def cmd_letter(a, conn):
 
 
 def _print_reading(rd: dict) -> None:
-    out(f"\n☯ {rd['title']}\n《象》曰：{rd['xiang']}\n{rd['plain']}\n姿态：{rd['stance_text']}\n{rd['change']}")
+    z = rd["zhuxi"]
+    out(f"\n☯ {rd['title']}\n{rd['guaci']}\n《象》曰：{rd['xiang']}\n{rd['plain']}\n\n{z['rule']}")
+    for m in z["main"] + z["aux"]:
+        out(f"  {m['text']}" + (f"\n    （底本：{m['wuying']}）" if m.get("wuying") else ""))
+    out(f"\n姿态：{rd['stance_text']}\n{rd['change']}")
     if rd.get("trend"):
         out(rd["trend"])
     if rd.get("ai"):
@@ -91,6 +95,9 @@ def _print_reading(rd: dict) -> None:
 
 
 def cmd_yi(a, conn):
+    if a.action == "stats":
+        out(yi.stats(conn))
+        return
     if a.action == "history":
         for c in yi.history(conn):
             out(f"#{c['id']} {c['day']} {c['question'] or '今日'}：{c['title']}" + (f" ｜后来：{c['outcome']}" if c["outcome"] else ""))
@@ -105,7 +112,8 @@ def cmd_yi(a, conn):
 
         r = web.ask_yi(conn, a.ask)
     else:
-        r = yi.cast_today(conn)
+        intention = input("心里想着什么？（可以不写，直接回车）").strip() if sys.stdin.isatty() else ""
+        r = yi.cast_today(conn, intention or None)
     lines = r["lines"]
     for i in range(5, -1, -1):
         v = lines[i]
@@ -135,6 +143,61 @@ def cmd_shi(a, conn):
         for t in shi.trends(conn):
             d = {1: "顺", -1: "逆", 0: "观"}[t["direction"]]
             out(f"#{t['id']} [{d}{t['strength']}] [{t['domain'] or '—'}] {t['title']}")
+
+
+def cmd_horizon(a, conn):
+    if a.action == "add":
+        out(f"✨ 盼头 #{family.add_horizon(conn, ' '.join(a.text), a.date, not a.alone)} 放上地平线了")
+    elif a.action == "live":
+        family.live_horizon(conn, int(a.text[0]), " ".join(a.text[1:]))
+        out("记下了。下一个盼头是什么？")
+    else:
+        h = family.horizons(conn)
+        for x in h["ahead"]:
+            out(f"#{x['id']} {x['title']}  {x['date']}（还有 {x['days_left']} 天）")
+        for x in h["to_reflect"]:
+            out(f"#{x['id']} {x['title']} 已经过了——怎么样？ lifeos horizon live {x['id']} 一句话")
+        if h["empty_soon"]:
+            out("✨ 一个月内没有盼头了。可以是：" + "；".join(h["ideas"]))
+
+
+def cmd_ritual(a, conn):
+    if a.action == "log":
+        family.log_ritual(conn, int(a.text[0]), " ".join(a.text[1:]))
+        out("🕯")
+    elif a.action == "add":
+        out(f"🕯 仪式 #{family.add_ritual(conn, ' '.join(a.text), a.cadence, a.weekday, a.month, a.day)}")
+    else:
+        for r in family.rituals(conn):
+            done = f"（这一期已经做了：{r['done_this_period']['day']}）" if r["done_this_period"] else ""
+            out(f"#{r['id']} {r['when']} · {r['name']} {done}")
+
+
+def cmd_northstar(a, conn):
+    if a.text:
+        family.set_north_star(conn, " ".join(a.text))
+    ns = family.north_star(conn)
+    out(f"⭐ {ns['text'] or '（还没有写。和她一起，一句话就够）'}")
+    for h in ns["history"][:3]:
+        out(f"   过去（至 {h['until']}）：{h['text']}")
+
+
+def cmd_place(a, conn):
+    if a.action == "add":
+        p = family.add_place(conn, " ".join(a.text), a.date)
+        out(f"📍 {p['name']}" + (f"（{p['lat']:.2f}, {p['lon']:.2f}）" if p["lat"] else "（没找到坐标，地图上暂时不显示）"))
+    else:
+        for p in family.places(conn):
+            out(f"📍 {p['visited_on'] or ''} {p['name']}")
+
+
+def cmd_photos(a, conn):
+    out(photos.scan(conn))
+
+
+def cmd_junzi(a, conn):
+    c = yi.junzi_card()
+    out(f"\n{c['symbol']}  {c['image']}\n\n    {c['act']}\n\n—— {c['plain']}\n")
 
 
 def cmd_today(a, conn):
@@ -396,7 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_letgo)
 
     s = sub.add_parser("yi", help="起卦：今日之卦 / --ask 问一事 / history / outcome")
-    s.add_argument("action", nargs="?", choices=["today", "history", "outcome"], default="today")
+    s.add_argument("action", nargs="?", choices=["today", "history", "outcome", "stats"], default="today")
     s.add_argument("--ask", help="心里犹豫的一件事")
     s.add_argument("--id", type=int)
     s.add_argument("text", nargs="*")
@@ -409,6 +472,38 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--direction", type=int, default=0, choices=[-1, 0, 1], help="1 顺势 / -1 逆势 / 0 观察")
     s.add_argument("--strength", type=int, default=2, choices=range(1, 6))
     s.set_defaults(fn=cmd_shi)
+
+    s = sub.add_parser("horizon", help="盼头：add 标题 --date YYYY-MM-DD / list / live ID 一句话")
+    s.add_argument("action", nargs="?", choices=["list", "add", "live"], default="list")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--date")
+    s.add_argument("--alone", action="store_true", help="不是和她一起的")
+    s.set_defaults(fn=cmd_horizon)
+
+    s = sub.add_parser("ritual", help="仪式：list / log ID 一句话 / add 名称 --cadence weekly --weekday 7")
+    s.add_argument("action", nargs="?", choices=["list", "log", "add"], default="list")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--cadence", choices=["weekly", "monthly", "yearly"], default="weekly")
+    s.add_argument("--weekday", type=int)
+    s.add_argument("--month", type=int)
+    s.add_argument("--day", type=int)
+    s.set_defaults(fn=cmd_ritual)
+
+    s = sub.add_parser("northstar", help="我们的北极星：查看，或写下新的一句")
+    s.add_argument("text", nargs="*")
+    s.set_defaults(fn=cmd_northstar)
+
+    s = sub.add_parser("place", help="我们去过的地方：add 地名 --date / list")
+    s.add_argument("action", nargs="?", choices=["list", "add"], default="list")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--date")
+    s.set_defaults(fn=cmd_place)
+
+    s = sub.add_parser("photos", help="索引照片文件夹（rules.toml [photos]），用于那年今日")
+    s.add_argument("action", nargs="?", choices=["scan"], default="scan")
+    s.set_defaults(fn=cmd_photos)
+
+    sub.add_parser("junzi", help="君子卡：卡住的时候抽一张").set_defaults(fn=cmd_junzi)
 
     sub.add_parser("morning", help="早安：今天的节律、有期限的事、一个回响").set_defaults(fn=cmd_morning)
     sub.add_parser("letter", help="一封信：写给这一周的你").set_defaults(fn=cmd_letter)
@@ -562,4 +657,5 @@ def main(argv=None) -> None:
     conn = db.connect()
     if args.cmd != "init" and not db.get_meta(conn, "seeded"):
         seed.run(conn)
+    family.seed(conn)
     args.fn(args, conn)

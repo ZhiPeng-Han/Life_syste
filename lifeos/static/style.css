@@ -141,3 +141,24 @@ svg.hex { width: 140px; flex: none; }
 .hex-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
 .xiang { font-family: "Songti SC", "Noto Serif SC", "STSong", serif; font-size: 16px; }
 .up { color: var(--ok); } .down { color: var(--bad); }
+
+/* ---------- v0.4 家 ---------- */
+.horizon { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 4px; }
+.horizon a, .horizon > div { display: flex; align-items: baseline; gap: 6px; text-decoration: none; color: var(--fg);
+  background: var(--protected); border-radius: 999px; padding: 4px 14px; }
+.horizon.big > div { border-radius: var(--radius); padding: 12px 16px; flex: 1 1 200px; }
+.hz-days { font-size: 22px; font-weight: 700; color: var(--love); font-variant-numeric: tabular-nums; }
+.hz-title { font-size: 14px; }
+.ritual { margin: 6px 0; font-size: 14px; color: var(--muted); }
+.star { border-color: var(--love); }
+.star-text { font-size: 18px; margin: 6px 0 10px; line-height: 1.6; }
+#map { height: 260px; border-radius: 10px; margin-bottom: 10px; }
+.photos { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; }
+.photos figure { margin: 0; flex: none; }
+.photos img { height: 140px; border-radius: 8px; display: block; }
+.photos figcaption { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.junzi { margin: 10px 0; padding: 18px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); text-align: center; }
+.junzi-sym { font-size: 40px; line-height: 1; }
+.junzi-img { color: var(--muted); margin: 8px 0 4px; font-family: "Songti SC", "Noto Serif SC", serif; }
+.junzi-act { font-size: 19px; margin-bottom: 6px; font-family: "Songti SC", "Noto Serif SC", serif; }
+.zhuxi { border-left: 3px solid var(--accent); padding-left: 12px; margin: 10px 0; }

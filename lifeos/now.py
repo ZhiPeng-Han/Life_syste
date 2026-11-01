@@ -9,7 +9,7 @@
 import random
 from datetime import date, datetime, timedelta
 
-from . import config, db, llm, planner, relationship, shi, yi
+from . import config, db, family, llm, photos, planner, relationship, shi, tasks, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -141,6 +141,31 @@ def skip(conn, task_id: int) -> dict:
     return {"skips": skips, "ask_let_go": skips >= 3}
 
 
+# "现在不想"时可选的温和自问（借鉴 Super Productivity 的拖延助手）。可以完全跳过。
+SKIP_REASONS = {
+    "太大了": "那就拆小：写下它的第一小步，我把这一小步放进口袋。",
+    "不知道从哪开始": "写下你能想到的第一个动作，哪怕是\"打开文件\"。",
+    "有点抗拒": "只做 5 分钟，到点就可以停。不想停再继续。",
+    "现在不是时候": "好，它会在口袋里等你。",
+    "就是不想": "没关系。不想也是一种真实的感受。",
+}
+
+
+def skip_reason(conn, task_id: int, reason: str, first_step: str | None = None) -> dict:
+    conn.execute("INSERT INTO skip_reasons(task_id, reason, at) VALUES(?,?,?)", (task_id, reason, db.now()))
+    conn.commit()
+    out = {"reply": SKIP_REASONS.get(reason, "好。")}
+    if first_step and first_step.strip():
+        t = conn.execute("SELECT domain, project FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        out["new_task_id"] = tasks.add(conn, f"第一步：{first_step.strip()}", t[0] if t else "生活维持", 4, "low", 10,
+                                       project=t[1] if t else None, source="first_step")
+    return out
+
+
+def skip_patterns(conn) -> list[dict]:
+    return db.rows(conn.execute("SELECT reason, COUNT(*) n FROM skip_reasons GROUP BY reason ORDER BY n DESC"))
+
+
 def let_go(conn, task_id: int) -> None:
     """放下不是失败，是选择。"""
     conn.execute("UPDATE tasks SET status = 'let_go', done_at = ? WHERE id = ?", (db.now(), task_id))
@@ -194,11 +219,17 @@ def anchors(on: date, after_minute: int = 0) -> list[str]:
             if b["kind"] != "fixed" and b["start"] >= after_minute]
 
 
+def _countdown(days: int) -> str:
+    return "就是今天" if days == 0 else f"还有 {days} 天"
+
+
 def morning(conn, on: date | None = None) -> str:
     on = on or date.today()
     p = pocket(conn, on)
     term = shi.solar_term(on)
-    lines = [f"早安。今天是周{'一二三四五六日'[on.weekday()]}，{term['name']}时节。{term['tip']}"]
+    alm = shi.almanac(on)
+    lines = [f"早安。今天是周{'一二三四五六日'[on.weekday()]}" + (f"，农历{alm['lunar'].split(' ')[-1]}" if alm else "")
+             + f"，{term['name']}时节。{term['tip']}"]
     wx = shi.weather(conn, on)
     if wx:
         lines.append(f"{wx['icon']} {wx['city']}{wx['label']}，{wx['tmin']}–{wx['tmax']}°C")
@@ -213,6 +244,17 @@ def morning(conn, on: date | None = None) -> str:
         lines.append("🌿 今天的节律：" + "；".join(a))
     for d in relationship.upcoming_dates(conn, on, horizon=14):
         lines.append(f"🎁 {d['name']}还有 {d['days_left']} 天")
+    hz = family.horizons(conn, on)
+    if hz["ahead"]:
+        lines.append("✨ 盼头：" + "；".join(f"{h['title']}（{_countdown(h['days_left'])}）" for h in hz["ahead"][:2]))
+    elif hz["empty_soon"]:
+        lines.append("✨ 地平线上空了。想不想放一件期待的事？")
+    for r in family.rituals(conn, on):
+        if r["gentle"]:
+            lines.append(f"🕯 {'今天是' if r['today'] else '这一期还没'}「{r['name']}」")
+    ph = photos.on_this_day(conn, on, limit=1)
+    if ph:
+        lines.append(f"📷 {ph[0]['years_ago']} 年前的今天，你拍过照片。")
     soon = [t for t in p["dated"] if t["days_left"] <= 2]
     if soon:
         lines.append("⏳ 真正有期限的：" + "；".join(

@@ -62,10 +62,23 @@ def _call(system: str, user: str, effort: str, output_format: dict | None):
     return "".join(b.text for b in response.content if b.type == "text")
 
 
+def core_memory() -> str:
+    """借鉴 Letta 的"核心记忆块"：人生导则和《我的说明书》常驻在每一次对话里，AI 才真正认识他。"""
+    from . import config
+
+    parts = []
+    for path, limit in ((config.REPO_ROOT / "principles" / "人生导则.md", 3000), (config.home() / "我的说明书.md", 1500)):
+        if path.exists():
+            parts.append(path.read_text(encoding="utf-8")[:limit])
+    if not parts:
+        return ""
+    return "\n\n<core_memory>\n以下是他自己写下的人生导则和系统对他的了解，回应时与之保持一致：\n" + "\n---\n".join(parts) + "\n</core_memory>"
+
+
 def complete_text(system: str, user: str, effort: str = "medium") -> str | None:
     if not available():
         return None
-    return _call(system, user, effort, None)
+    return _call(system + core_memory(), user, effort, None)
 
 
 def complete_json(system: str, user: str, schema: dict, effort: str = "low") -> dict | None:

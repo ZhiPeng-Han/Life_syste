@@ -11,7 +11,7 @@ import os
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from . import config, db, llm
 
@@ -53,9 +53,33 @@ WEATHER_CODES = [
 
 # ------------------------------------------------------------------ 节气
 
+def _lunar(on: date):
+    try:
+        from lunar_python import Solar  # 可选依赖：pip install lunar_python
+    except ImportError:
+        return None
+    return Solar.fromYmd(on.year, on.month, on.day).getLunar()
+
+
+def almanac(on: date | None = None) -> dict | None:
+    """农历与黄历宜忌——只作为文化参考展示，不进入任何决策。"""
+    lunar = _lunar(on or date.today())
+    if not lunar:
+        return None
+    return {"lunar": f"{lunar.getYearInGanZhi()}年 {lunar.getMonthInChinese()}月{lunar.getDayInChinese()}",
+            "yi": lunar.getDayYi()[:6], "ji": lunar.getDayJi()[:6]}
+
+
 def solar_term(on: date | None = None) -> dict:
     on = on or date.today()
-    cur = prev = None
+    tips = {name: tip for _, _, name, tip in SOLAR_TERMS}
+    lunar = _lunar(on)
+    if lunar:  # 精确节气（寿星天文历算法）
+        prev, nxt = lunar.getPrevJieQi(True), lunar.getNextJieQi(False)
+        nd = nxt.getSolar()
+        return {"name": prev.getName(), "tip": tips.get(prev.getName(), ""), "next": nxt.getName(),
+                "days_to_next": (date(nd.getYear(), nd.getMonth(), nd.getDay()) - on).days, "exact": True}
+    prev = None
     for m, d, name, tip in SOLAR_TERMS:
         if (m, d) <= (on.month, on.day):
             prev = (m, d, name, tip)
@@ -63,7 +87,7 @@ def solar_term(on: date | None = None) -> dict:
     idx = SOLAR_TERMS.index(prev)
     nxt = SOLAR_TERMS[(idx + 1) % len(SOLAR_TERMS)]
     nxt_date = date(on.year + (1 if (nxt[0], nxt[1]) < (on.month, on.day) else 0), nxt[0], nxt[1])
-    cur = {"name": prev[2], "tip": prev[3], "next": nxt[2], "days_to_next": (nxt_date - on).days}
+    cur = {"name": prev[2], "tip": prev[3], "next": nxt[2], "days_to_next": (nxt_date - on).days, "exact": False}
     return cur
 
 
@@ -99,10 +123,10 @@ def weather(conn, on: date | None = None) -> dict | None:
 # ------------------------------------------------------------------ 大势
 
 def add(conn, title: str, domain: str | None = None, direction: int = 0, strength: int = 2,
-        summary: str | None = None, source: str = "me", url: str | None = None) -> int:
+        summary: str | None = None, source: str = "me", url: str | None = None, feed: str | None = None) -> int:
     tid = conn.execute(
-        "INSERT INTO trends(title, summary, domain, direction, strength, source, url, observed_at) VALUES(?,?,?,?,?,?,?,?)",
-        (title, summary, domain, max(-1, min(1, direction)), max(1, min(5, strength)), source, url, db.now()),
+        "INSERT INTO trends(title, summary, domain, direction, strength, source, url, observed_at, feed) VALUES(?,?,?,?,?,?,?,?,?)",
+        (title, summary, domain, max(-1, min(1, direction)), max(1, min(5, strength)), source, url, db.now(), feed),
     ).lastrowid
     conn.commit()
     return tid
@@ -111,6 +135,37 @@ def add(conn, title: str, domain: str | None = None, direction: int = 0, strengt
 def retire(conn, trend_id: int) -> None:
     conn.execute("UPDATE trends SET status = 'retired' WHERE id = ?", (trend_id,))
     conn.commit()
+    _feed_vote(conn, trend_id, -1)
+
+
+def keep(conn, trend_id: int) -> None:
+    """标记"这条有用"。"""
+    conn.execute("UPDATE trends SET strength = MIN(strength + 1, 5) WHERE id = ?", (trend_id,))
+    conn.commit()
+    _feed_vote(conn, trend_id, +1)
+
+
+def _feed_vote(conn, trend_id: int, vote: int) -> None:
+    row = conn.execute("SELECT feed FROM trends WHERE id = ?", (trend_id,)).fetchone()
+    if row and row[0]:
+        weights = db.get_meta(conn, "feed_weights", {})
+        weights[row[0]] = round(max(0.1, min(3.0, weights.get(row[0], 1.0) + 0.2 * vote)), 2)
+        db.set_meta(conn, "feed_weights", weights)
+
+
+def digest(conn, days: int = 7) -> str:
+    """一段"本周大势"简报（给信和机器人用）。"""
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+    recent = [t for t in trends(conn, 100) if t["observed_at"] >= since]
+    mom = momentum(conn)
+    lines = ["🌏 本周大势"]
+    if mom:
+        lines.append("各领域之势：" + "，".join(f"{k}{'顺' if v > 0 else '逆'}{abs(v)}" for k, v in sorted(mom.items(), key=lambda x: -abs(x[1]))))
+    for t in sorted(recent, key=lambda t: -t["weight"])[:5]:
+        lines.append(f"· [{ {1: '顺', -1: '逆', 0: '观'}[t['direction']] }] {t['title']}" + (f"——{t['summary']}" if t["summary"] else ""))
+    if len(lines) == 1:
+        lines.append("这周没有新的观察。")
+    return "\n".join(lines)
 
 
 def trends(conn, limit: int = 30) -> list[dict]:
@@ -183,7 +238,7 @@ TREND_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["trends"],
     "properties": {"trends": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
-        "required": ["title", "summary", "domain", "direction", "strength"],
+        "required": ["title", "summary", "domain", "direction", "strength", "source_index"],
         "properties": {"title": {"type": "string"}, "summary": {"type": "string"}, "domain": {"type": "string"},
                        "direction": {"type": "integer"}, "strength": {"type": "integer"}}}}},
 }
@@ -193,10 +248,14 @@ def fetch(conn) -> dict:
     """读配置里的新闻源。有 Claude 时提炼成和你有关的趋势；没有时只把标题记为'观察'。"""
     feeds = config.rules().get("environment", {}).get("feeds", [])
     headlines, errors = [], []
+    weights = db.get_meta(conn, "feed_weights", {})
     for f in feeds:
+        w = weights.get(f["url"], 1.0)
+        if w <= 0.2:
+            continue  # 你一再标记"过时了"的源，先歇一歇
         try:
-            for h in _fetch_feed(f["url"]):
-                headlines.append({**h, "domain": f.get("domain")})
+            for h in _fetch_feed(f["url"], limit=max(2, round(8 * w))):
+                headlines.append({**h, "domain": f.get("domain"), "feed": f["url"]})
         except (OSError, ET.ParseError) as e:
             errors.append(f"{f['url']}：{e}")
     if not headlines:
@@ -206,20 +265,22 @@ def fetch(conn) -> dict:
     ai = llm.complete_json(
         "你在帮一位住在英国的年轻建筑师（在考 RIBA Part 3，业余转卖二手相机镜头，研究 AI 视频自媒体，计划和女友去冰岛）"
         f"看'天下大势'。从下面的新闻标题里，只挑出真正会影响他生活或事业的 0-5 个趋势。domain 只能是：{domains}。"
-        "direction：对他是顺势 1、逆势 -1、只需观察 0。strength 1-5。summary 一句话说明为什么和他有关。宁缺毋滥。",
-        "\n".join(f"- [{h['domain'] or ''}] {h['title']}" for h in headlines),
+        "direction：对他是顺势 1、逆势 -1、只需观察 0。strength 1-5。summary 一句话说明为什么和他有关。"
+        "source_index 填主要依据的那条标题的编号。宁缺毋滥。",
+        "\n".join(f"- ({i}) [{h['domain'] or ''}] {h['title']}" for i, h in enumerate(headlines)),
         TREND_SCHEMA,
     )
     added = 0
     if ai:
         for t in ai["trends"]:
             if t["title"] not in seen:
+                src = headlines[t["source_index"]] if 0 <= t["source_index"] < len(headlines) else {}
                 add(conn, t["title"], t["domain"] if t["domain"] in config.domains() else None,
-                    t["direction"], t["strength"], t["summary"], source="ai")
+                    t["direction"], t["strength"], t["summary"], source="ai", url=src.get("url"), feed=src.get("feed"))
                 added += 1
     else:
         for h in headlines:
             if h["title"] not in seen:
-                add(conn, h["title"], h["domain"] or _guess_domain(h["title"]), 0, 1, None, "news", h["url"])
+                add(conn, h["title"], h["domain"] or _guess_domain(h["title"]), 0, 1, None, "news", h["url"], h["feed"])
                 added += 1
     return {"added": added, "errors": errors, "engine": "claude" if ai else "rules"}

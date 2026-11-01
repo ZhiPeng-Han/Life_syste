@@ -5,17 +5,18 @@
 3. 先不设 LIFEOS_TELEGRAM_CHAT，运行 python -m lifeos bot，给机器人发一条消息，
    终端会打印你的 chat id；再 export LIFEOS_TELEGRAM_CHAT=那个id 后重启。只有这个 chat 能写入你的数据。
 
-命令：/now 疲惫 此刻给一个可能性  /morning 早安  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
+命令：/now 疲惫 此刻给一个可能性  /morning 早安  /yi 今日之卦（/yi 问题 = 问一事）  /shi 本周大势  /junzi 君子卡  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
 其他任何文字都会被当作"随手记"。
 """
 
 import json
 import os
 import time
+from datetime import datetime
 import urllib.parse
 import urllib.request
 
-from . import business, db, decisions, meals, memory, now, planner, relationship
+from . import business, config, db, decisions, letter, meals, memory, now, planner, relationship, shi, yi
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -37,6 +38,23 @@ def handle(text: str, conn) -> str:
             return "你现在感觉怎么样？发：/now " + " / /now ".join(now.FEELINGS)
         now.log_state(conn, feeling)
         return now.render_suggestion(now.suggest(conn, feeling, decide=True))
+    if text.startswith("/yi"):
+        q = text[3:].strip()
+        if q:
+            from . import web
+
+            r = web.ask_yi(conn, q)
+        else:
+            r = yi.cast_today(conn)
+        rd = r["reading"]
+        z = rd["zhuxi"]
+        return "\n".join([f"☯ {rd['title']}", f"《象》曰：{rd['xiang']}", rd["plain"], z["rule"]]
+                         + [m["text"] for m in z["main"]] + [f"姿态：{rd['stance_text']}", rd["note"]])
+    if text.startswith("/shi"):
+        return shi.digest(conn)
+    if text.startswith("/junzi"):
+        c = yi.junzi_card()
+        return f"{c['symbol']} {c['image']}\n{c['act']}\n——{c['plain']}"
     if text.startswith("/today"):
         return planner.render(planner.plan(conn=conn))
     if text.startswith("/her"):
@@ -65,6 +83,27 @@ def handle(text: str, conn) -> str:
     return memory.describe(memory.capture(text, source="telegram", conn=conn))
 
 
+def due_pushes(conn, at: datetime) -> list[str]:
+    """到点的定时推送（每种每天/每周只发一次）。"""
+    cfg = config.rules().get("telegram", {})
+    out = []
+    hm = at.strftime("%H:%M")
+    if cfg.get("morning") and hm >= cfg["morning"]:
+        key = f"pushed:morning:{at.date().isoformat()}"
+        if not db.get_meta(conn, key):
+            db.set_meta(conn, key, True)
+            out.append(now.morning(conn, at.date()))
+    wd = cfg.get("weekly_digest", "")
+    if wd:
+        day, _, t = wd.partition(" ")
+        if day[:3].lower() == at.strftime("%a").lower() and hm >= t:
+            key = f"pushed:weekly:{at.date().isoformat()}"
+            if not db.get_meta(conn, key):
+                db.set_meta(conn, key, True)
+                out.append(shi.digest(conn) + "\n\n" + letter.render(conn)[:1500])
+    return out
+
+
 def run() -> None:
     token = os.environ.get("LIFEOS_TELEGRAM_TOKEN")
     allowed = os.environ.get("LIFEOS_TELEGRAM_CHAT")
@@ -73,6 +112,15 @@ def run() -> None:
     print("🤖 LifeOS 机器人运行中…（Ctrl+C 退出）")
     offset = 0
     while True:
+        if allowed:
+            conn = db.connect()
+            try:
+                for msg in due_pushes(conn, datetime.now()):
+                    _call(token, "sendMessage", chat_id=allowed, text=msg[:4000])
+            except OSError:
+                pass
+            finally:
+                conn.close()
         try:
             updates = _call(token, "getUpdates", offset=offset, timeout=30).get("result", [])
         except OSError as e:

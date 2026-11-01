@@ -321,3 +321,16 @@ domain = "建筑工作"
 [[environment.feeds]]
 url = "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
 domain = "自媒体"
+
+# ---------------------------------------------------------------
+# 照片回响：填你的照片文件夹（可以是 Immich 的存储目录），然后运行 python -m lifeos photos scan
+# ---------------------------------------------------------------
+[photos]
+folders = []   # 例如 ["~/Pictures/Photos Library Export", "~/Pictures/Lightroom"]
+
+# ---------------------------------------------------------------
+# Telegram 机器人定时推送（需要 python -m lifeos bot 在运行）。留空就不推送。
+# ---------------------------------------------------------------
+[telegram]
+morning = ""          # 例如 "07:45"：推送早安
+weekly_digest = ""    # 例如 "Sun 20:00"：推送本周大势与一封信的开头

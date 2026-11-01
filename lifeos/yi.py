@@ -7,7 +7,10 @@
 """
 
 import json
+import random
 import secrets
+from functools import lru_cache
+from pathlib import Path
 
 from . import config, db, llm
 
@@ -105,6 +108,13 @@ STANCES = {
            "energy": {"high": 0.9}, "domains": {"器材事业": 0.7}, "care": 1.1, "deal": "慎"},
 }
 
+@lru_cache(maxsize=1)
+def texts() -> list[dict]:
+    """卦辞、彖传、爻辞、小象、武英殿本底本（来源见 lifeos/texts/SOURCES.md）。"""
+    with open(Path(__file__).parent / "texts" / "zhouyi.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
 POSITIONS = ["初爻（开始、根基）", "二爻（内里、家）", "三爻（转折、险处）",
              "四爻（靠近外界）", "五爻（核心、主位）", "上爻（终了、过头）"]
 
@@ -171,6 +181,38 @@ def _change_note(r: dict) -> str:
     return f"有 {k} 个变爻：大变之时，现在的局面不会持续太久，多看之卦。"
 
 
+def zhuxi(r: dict) -> dict:
+    """按朱熹《易学启蒙》的变爻取法，找出这一卦"该看哪几句"。"""
+    p, c = r["primary"]["n"], (r["changed"]["n"] if r.get("changed") else None)
+    tp, tc = texts()[p - 1], (texts()[c - 1] if c else None)
+    mv = r["moving"]
+    still = [i for i in range(6) if i not in mv]
+    k = len(mv)
+
+    def yao(t, i):
+        return {"text": t["yao"][i], "xiang": t["yao_xiang"][i], "wuying": t["wuying"][i], "of": t["name"]}
+
+    if k == 0:
+        return {"rule": "六爻不变：看本卦卦辞。", "main": [{"text": tp["guaci"], "of": tp["name"]}], "aux": []}
+    if k == 1:
+        return {"rule": "一爻变：看本卦这一变爻的爻辞。", "main": [yao(tp, mv[0])], "aux": []}
+    if k == 2:
+        return {"rule": "二爻变：看本卦两个变爻的爻辞，以上面那一爻为主。",
+                "main": [yao(tp, mv[1])], "aux": [yao(tp, mv[0])]}
+    if k == 3:
+        return {"rule": "三爻变：看本卦与之卦的卦辞，以本卦为主（贞），之卦为辅（悔）。",
+                "main": [{"text": tp["guaci"], "of": tp["name"]}], "aux": [{"text": tc["guaci"], "of": tc["name"]}]}
+    if k == 4:
+        return {"rule": "四爻变：看之卦两个不变爻的爻辞，以下面那一爻为主。",
+                "main": [yao(tc, still[0])], "aux": [yao(tc, still[1])]}
+    if k == 5:
+        return {"rule": "五爻变：看之卦那个不变爻的爻辞。", "main": [yao(tc, still[0])], "aux": []}
+    if p in (1, 2):
+        return {"rule": "六爻皆变：乾坤看用九、用六。",
+                "main": [{"text": tp["yong"], "wuying": tp.get("yong_wuying"), "of": tp["name"]}], "aux": []}
+    return {"rule": "六爻皆变：看之卦卦辞。", "main": [{"text": tc["guaci"], "of": tc["name"]}], "aux": []}
+
+
 def interpret(r: dict, question: str | None = None) -> dict:
     p = r["primary"]
     stance = p["stance"]
@@ -183,7 +225,11 @@ def interpret(r: dict, question: str | None = None) -> dict:
         "change": _change_note(r),
         "questions": QUESTIONS[stance],
         "note": "卦是一面镜子，不是预言。它给你一个新角度；事实和你的判断仍然最重要。",
+        "guaci": texts()[p["n"] - 1]["guaci"],
+        "zhuxi": zhuxi(r),
     }
+    if question:
+        out["question"] = question
     if r.get("changed"):
         c = r["changed"]
         out["trend"] = f"走向「{c['name']}」：{c['xiang']} {c['plain']}"
@@ -227,17 +273,17 @@ def today_cast(conn, day: str | None = None) -> dict | None:
     if not row:
         return None
     r = load(dict(row))
-    return {"id": row["id"], **r, "reading": interpret(r)}
+    return {"id": row["id"], **r, "reading": interpret(r, row["question"])}
 
 
-def cast_today(conn) -> dict:
-    """每天只起一次卦：起过就返回当天那一卦（命不能重抽）。"""
+def cast_today(conn, intention: str | None = None) -> dict:
+    """每天只起一次卦：起过就返回当天那一卦（命不能重抽）。intention：起卦前心里想着的那句话。"""
     existing = today_cast(conn)
     if existing:
         return existing
     r = cast()
-    cid = save(conn, r, None, "day")
-    return {"id": cid, **r, "reading": interpret(r)}
+    cid = save(conn, r, intention or None, "day")
+    return {"id": cid, **r, "reading": interpret(r, intention)}
 
 
 def history(conn, limit: int = 20) -> list[dict]:
@@ -272,3 +318,37 @@ def factor(stance: str | None, domain: str | None, energy: str | None = None, ki
         if skips and s.get("skipped"):
             m *= s["skipped"]
     return 1 + _weight() * (m - 1)
+
+
+# ------------------------------------------------------------------ 起卦统计：只描述，不解释
+
+def stats(conn) -> dict:
+    """借鉴 pro-vi/iching：描述与概率严格分开。
+    三枚铜钱法下每爻为变爻的概率是 1/4，所以每卦平均 1.5 个变爻；姿态的期望来自 64 卦里各姿态的占比。
+    这里只把你的记录和随机期望并列，不暗示任何"灵验"。"""
+    rows = db.rows(conn.execute("SELECT lines, stance FROM casts"))
+    n = len(rows)
+    if not n:
+        return {"n": 0}
+    moving = sum(sum(1 for v in json.loads(r["lines"]) if v in (6, 9)) for r in rows)
+    expect = {k: sum(1 for h in HEXAGRAMS if h[4] == k) / 64 for k in STANCES}
+    seen = {k: sum(1 for r in rows if r["stance"] == k) for k in STANCES}
+    return {
+        "n": n,
+        "moving_avg": round(moving / n, 2), "moving_expected": 1.5,
+        "stances": [{"stance": k, "desc": STANCES[k]["desc"], "seen": seen[k], "expected": round(expect[k] * n, 1)}
+                    for k in STANCES],
+        "note": "这是描述，不是解释。样本少时偏离期望很正常；即使偏离，也不说明卦在'回应'你。",
+    }
+
+
+# ------------------------------------------------------------------ 君子卡：六十四条《象传》，卡住时抽一张
+
+def junzi_card(exclude: list[int] | None = None) -> dict:
+    """像 Oblique Strategies 一样用随机打破僵局；内容是公有领域的《象传》"君子以……"。"""
+    pool = [i for i in range(1, 65) if i not in (exclude or [])] or list(range(1, 65))
+    n = random.choice(pool)
+    p = info(n)
+    image, _, act = p["xiang"].partition("；") if "；" in p["xiang"] else p["xiang"].partition("，")
+    return {"n": n, "symbol": p["symbol"], "name": p["full"], "image": image, "act": act or p["xiang"],
+            "xiang": p["xiang"], "plain": p["plain"]}

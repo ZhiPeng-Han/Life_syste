@@ -7,7 +7,7 @@
 from collections import Counter
 from datetime import date, timedelta
 
-from . import config, db, llm, now, shi, yi
+from . import config, db, family, llm, now, shi, yi
 
 QUESTIONS = [
     "这周哪一刻，你最像你自己？",
@@ -40,6 +40,11 @@ def gather(conn, end: date) -> dict:
     sold = db.rows(conn.execute(f"SELECT model, sell_price FROM items WHERE {in_week.format(col='sold_at')}", (s, e)))
     wishes_done = db.rows(conn.execute("SELECT content FROM wishes WHERE status = '已实现'"))
     casts = [c for c in yi.history(conn, 50) if s <= c["day"] <= e]
+    lived = db.rows(conn.execute("SELECT title, reflection FROM horizons WHERE status = 'lived' AND date BETWEEN ? AND ?", (s, e)))
+    rituals_done = db.rows(conn.execute(
+        "SELECT r.name, l.note FROM ritual_log l JOIN rituals r ON r.id = l.ritual_id WHERE l.day BETWEEN ? AND ?", (s, e)))
+    places = db.rows(conn.execute("SELECT name FROM places WHERE visited_on BETWEEN ? AND ?", (s, e)))
+    ahead = family.horizons(conn, end)["ahead"]
     world = [t for t in shi.trends(conn, 50) if t["direction"] and s <= t["observed_at"][:10] <= e]
     return {
         "start": s, "end": e,
@@ -52,6 +57,9 @@ def gather(conn, end: date) -> dict:
         "wishes_done": [w["content"] for w in wishes_done],
         "question": QUESTIONS[end.isocalendar().week % len(QUESTIONS)],
         "casts": casts,
+        "north_star": family.north_star(conn)["text"],
+        "lived": lived, "rituals_done": rituals_done, "places": places,
+        "next_horizon": ahead[0] if ahead else None,
         "world": world,
     }
 
@@ -59,6 +67,8 @@ def gather(conn, end: date) -> dict:
 def _template(d: dict) -> str:
     cur = config.currency()
     L = [f"# ✉️ 写给这一周的你（{d['start']} → {d['end']}）", ""]
+    if d["north_star"]:
+        L += [f"> 你们的北极星：{d['north_star']}", ""]
     if d["weather"]:
         weather = "、".join(f"{now.FEELINGS.get(f, {}).get('icon', '')}{f} {n} 次" for f, n in d["weather"].most_common())
         L += ["## 你的天气", "", f"这周你告诉我的感受：{weather}。"]
@@ -72,6 +82,12 @@ def _template(d: dict) -> str:
         L += ["## 她", ""] + [f"- {m}" for m in d["her"]]
         if d["wishes_done"]:
             L.append(f"- 已经实现的愿望：{'、'.join(d['wishes_done'])} 🎉")
+        L.append("")
+    if d["lived"] or d["rituals_done"] or d["places"]:
+        L += ["## 你们一起的", ""]
+        L += [f"- ✨ {h['title']}" + (f"：{h['reflection']}" if h["reflection"] else "") for h in d["lived"]]
+        L += [f"- 🕯 {r['name']}" + (f"：{r['note']}" if r["note"] else "") for r in d["rituals_done"]]
+        L += [f"- 📍 去了 {p['name']}" for p in d["places"]]
         L.append("")
     if d["done"] or d["sold"]:
         L += ["## 你做到的", ""] + [f"- {t}" for t in d["done"][:10]]
@@ -89,6 +105,11 @@ def _template(d: dict) -> str:
         L += ["## 你放下的", "", "、".join(d["let_go"]) + "。放下也是一种选择。", ""]
     if len(L) <= 2:
         L += ["这周没有留下什么记录。没关系，日子不一定要被记下来才算过了。", ""]
+    if d["next_horizon"]:
+        h = d["next_horizon"]
+        L += ["## 地平线上", "", f"{h['title']}，还有 {h['days_left']} 天。", ""]
+    else:
+        L += ["## 地平线上", "", "空着。想一件你们可以一起期待的事，放上去吧。", ""]
     L += ["## 一个问题", "", d["question"], "", "（不用回答给谁听。想到了，随手记一句就好。）"]
     return "\n".join(L)
 

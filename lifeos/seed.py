@@ -1,6 +1,6 @@
 """首次初始化：领域、初始关系假设网络、她的三个愿望及对应的起步任务、示例 Part 3 卡片。"""
 
-from . import cards, config, db, relationship, tasks
+from . import cards, config, db, family, relationship, tasks
 
 # 方案第 6 章的初始假设网络，之后由真实数据验证或否定
 RELATIONS = [
@@ -81,6 +81,7 @@ def run(conn=None) -> dict:
         tasks.add(conn, title, domain, pri, energy, minutes, project=project, source="seed")
     for front, back in CARDS:
         cards.add(conn, front, back)
+    family.seed(conn)
     db.set_meta(conn, "seeded", db.now())
     conn.commit()
     return {"seeded": True, "wishes": len(WISHES), "tasks": len(TASKS), "cards": len(CARDS)}

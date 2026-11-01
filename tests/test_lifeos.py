@@ -7,7 +7,8 @@ os.environ["LIFEOS_HOME"] = tempfile.mkdtemp()
 os.environ["LIFEOS_LLM"] = "off"
 os.environ["LIFEOS_OFFLINE"] = "1"
 
-from lifeos import letter, now, shi, yi
+from lifeos import family, letter, llm, now, photos, shi, yi
+from lifeos import config
 from lifeos import business, cards, db, decisions, experiments, extract, meals, memory, planner, relationship, review, seed  # noqa: E402
 
 
@@ -225,6 +226,111 @@ class TianshiTest(unittest.TestCase):
         shi.add(conn, "住宅项目放缓", "建筑工作", -1, 5)
         c = next(c for c in now.candidates(conn, "充沛") if c.get("task_id") == tid)
         self.assertNotIn("逆势", c["reason"])  # 有期限的事不被势影响
+
+
+class YiTextsTest(unittest.TestCase):
+    def test_texts_complete(self):
+        t = yi.texts()
+        self.assertEqual(len(t), 64)
+        self.assertTrue(all(len(x["yao"]) == 6 and len(x["wuying"]) == 6 for x in t))
+        self.assertEqual(t[0]["yong"], "用九：见群龙无首，吉。")
+        self.assertEqual([x["name"] for x in t], [h[0] for h in yi.HEXAGRAMS])
+
+    def test_zhuxi_rules(self):
+        main = lambda lines: [m["text"] for m in yi.zhuxi(yi.cast(lines))["main"]]  # noqa: E731
+        self.assertEqual(main([7] * 6), ["乾：元亨，利贞。"])
+        self.assertEqual(main([9, 7, 7, 7, 7, 7]), ["初九：潜龙，勿用。"])
+        self.assertEqual(main([9, 9, 7, 7, 7, 7]), ["九二：见龙在田，利见大人。"])  # 二爻变以上爻为主
+        self.assertEqual(main([9, 9, 9, 9, 7, 7]), ["九五：观我生，君子无咎。"])  # 四爻变看之卦下面的不变爻
+        self.assertEqual(main([6] * 6), ["用六：利永贞。"])
+
+    def test_stats_and_junzi(self):
+        conn = fresh()
+        self.assertEqual(yi.stats(conn)["n"], 0)
+        yi.cast_today(conn, "今天想专心画图")
+        st = yi.stats(conn)
+        self.assertEqual(st["n"], 1)
+        self.assertIn("描述", st["note"])
+        self.assertEqual(yi.today_cast(conn)["reading"]["question"], "今天想专心画图")
+        c = yi.junzi_card()
+        self.assertTrue(c["act"])
+
+
+class FamilyTest(unittest.TestCase):
+    def test_horizons(self):
+        conn = fresh()
+        self.assertTrue(family.horizons(conn)["empty_soon"])
+        family.add_horizon(conn, "冰岛", (date.today() + timedelta(days=100)).isoformat())
+        self.assertTrue(family.horizons(conn)["empty_soon"])  # 一个月内仍然没有盼头
+        hid = family.add_horizon(conn, "日料", (date.today() + timedelta(days=3)).isoformat())
+        h = family.horizons(conn)
+        self.assertFalse(h["empty_soon"])
+        self.assertEqual(h["ahead"][0]["title"], "日料")
+        h = family.horizons(conn, date.today() + timedelta(days=5))
+        self.assertEqual(h["to_reflect"][0]["id"], hid)
+        family.live_horizon(conn, hid, "她说是今年吃过最好吃的一顿")
+        self.assertTrue(any("最好吃" in m["content"] for m in memory.timeline(1, conn)))
+        self.assertIn("日料", now.morning(conn) + "日料")  # 早安能渲染
+
+    def test_rituals_gentle_and_no_streaks(self):
+        conn = fresh()
+        sunday = date(2026, 11, 1)
+        r = next(x for x in family.rituals(conn, sunday) if x["name"] == "周日一起做饭")
+        self.assertTrue(r["gentle"] and r["today"])
+        family.log_ritual(conn, r["id"], "做了番茄牛腩")
+        r = next(x for x in family.rituals(conn, sunday) if x["name"] == "周日一起做饭")
+        self.assertFalse(r["gentle"])
+        self.assertNotIn("streak", r)
+
+    def test_north_star_history(self):
+        conn = fresh()
+        family.set_north_star(conn, "A")
+        ns = family.set_north_star(conn, "B")
+        self.assertEqual((ns["text"], ns["history"][0]["text"]), ("B", "A"))
+        self.assertIn("B", letter.render(conn))
+        self.assertIn("地平线上", letter.render(conn))
+
+
+class GentleTest(unittest.TestCase):
+    def test_skip_reason_first_step(self):
+        conn = fresh()
+        from lifeos import tasks
+        tid = tasks.add(conn, "写 Part 3 案例研究", "Part3", 4, "high", 120)
+        r = now.skip_reason(conn, tid, "太大了", "列出案例的三个小标题")
+        self.assertIn("拆小", r["reply"])
+        t = conn.execute("SELECT title, est_minutes FROM tasks WHERE id = ?", (r["new_task_id"],)).fetchone()
+        self.assertEqual((t[0], t[1]), ("第一步：列出案例的三个小标题", 10))
+        self.assertEqual(now.skip_patterns(conn)[0]["reason"], "太大了")
+
+    def test_feed_votes(self):
+        conn = fresh()
+        tid = shi.add(conn, "x", "器材事业", 0, 2, feed="https://a/feed")
+        shi.retire(conn, tid)
+        self.assertLess(db.get_meta(conn, "feed_weights")["https://a/feed"], 1)
+        tid = shi.add(conn, "y", "器材事业", 0, 2, feed="https://b/feed")
+        shi.keep(conn, tid)
+        self.assertGreater(db.get_meta(conn, "feed_weights")["https://b/feed"], 1)
+        self.assertIn("本周大势", shi.digest(conn))
+
+    def test_photos_on_this_day(self):
+        import tempfile
+        from pathlib import Path
+        conn = fresh()
+        folder = Path(tempfile.mkdtemp())
+        last_year = date.today().replace(year=date.today().year - 1)
+        (folder / f"IMG_{last_year:%Y%m%d}_1.jpg").write_bytes(b"\xff\xd8 no exif")
+        exif = f"{last_year:%Y:%m:%d} 10:00:00".encode()
+        (folder / "DSC0001.jpg").write_bytes(b"\xff\xd8" + b"x" * 100 + exif)
+        (folder / "other.jpg").write_bytes(b"\xff\xd8" + b"2001:01:01 00:00:00")
+        from unittest import mock
+        with mock.patch.object(config, "rules", return_value={"photos": {"folders": [str(folder)]}}):
+            self.assertEqual(photos.scan(conn)["added"], 3)
+        found = photos.on_this_day(conn, limit=5)
+        self.assertEqual(len(found), 2)
+        self.assertEqual(found[0]["years_ago"], 1)
+
+    def test_core_memory_includes_principles(self):
+        self.assertIn("天行健", llm.core_memory())
 
 
 class MiscTest(unittest.TestCase):

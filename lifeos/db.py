@@ -249,6 +249,56 @@ MIGRATIONS = [
     );
     CREATE INDEX idx_casts_day ON casts(day, kind);
     """,
+    # v4：家——盼头、仪式、去过的地方；照片回响；跳过的原因；大势的来源
+    """
+    CREATE TABLE horizons (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        date TEXT NOT NULL,
+        with_her INTEGER DEFAULT 1,
+        wish_id INTEGER,
+        status TEXT DEFAULT 'ahead',   -- ahead 还在前面 / lived 已经过了
+        reflection TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE rituals (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        cadence TEXT NOT NULL,         -- weekly / monthly / yearly
+        weekday INTEGER,               -- weekly：1-7
+        month INTEGER, day INTEGER,    -- yearly：月日；monthly：day 可空
+        note TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE ritual_log (
+        id INTEGER PRIMARY KEY,
+        ritual_id INTEGER REFERENCES rituals(id),
+        day TEXT NOT NULL,
+        note TEXT
+    );
+    CREATE TABLE places (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        lat REAL, lon REAL,
+        visited_on TEXT,
+        with_her INTEGER DEFAULT 1,
+        note TEXT
+    );
+    CREATE TABLE photos (
+        id INTEGER PRIMARY KEY,
+        path TEXT UNIQUE NOT NULL,
+        taken_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_photos_day ON photos(substr(taken_at, 6, 5));
+    CREATE TABLE skip_reasons (
+        id INTEGER PRIMARY KEY,
+        task_id INTEGER,
+        reason TEXT NOT NULL,
+        at TEXT NOT NULL
+    );
+    ALTER TABLE trends ADD COLUMN feed TEXT;
+    """,
 ]
 
 

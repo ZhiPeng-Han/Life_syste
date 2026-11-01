@@ -16,7 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, db, decisions, letter, meals, memory, now, planner, relationship, review, shi, tasks, yi)
+from . import (business, config, db, decisions, family, letter, meals, memory, now, photos, planner, relationship, review, shi,
+               tasks, yi)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -33,7 +34,9 @@ def api_get(path: str, q: dict, conn):
                 "anchors": now.anchors(t.date(), t.hour * 60 + t.minute), "echo": now.echo(conn),
                 "dated": [x for x in p["dated"] if x["days_left"] <= 2], "pocket_count": p["count"],
                 "dates": relationship.upcoming_dates(conn, horizon=14),
-                "term": shi.solar_term(), "weather": shi.weather(conn), "cast": _cast_brief(conn)}
+                "term": shi.solar_term(), "weather": shi.weather(conn), "cast": _cast_brief(conn),
+                "horizons": family.horizons(conn), "rituals": [r for r in family.rituals(conn) if r["gentle"]],
+                "photos": photos.on_this_day(conn), "skip_reasons": list(now.SKIP_REASONS)}
     if path == "/api/now":
         exclude = [x for x in one("exclude", "").split(",") if x]
         minutes = int(one("minutes")) if one("minutes") else None
@@ -43,8 +46,14 @@ def api_get(path: str, q: dict, conn):
         if one("note"):
             sug["ai"] = now.ai_note(conn, one("feeling"), one("note"), sug)
         return sug
+    if path == "/api/family":
+        return {"horizons": family.horizons(conn), "rituals": family.rituals(conn), "north_star": family.north_star(conn),
+                "places": family.places(conn), "wishes": relationship.wishes(conn)}
+    if path == "/api/junzi":
+        return yi.junzi_card()
     if path == "/api/tianshi":
         return {"term": shi.solar_term(), "weather": shi.weather(conn), "today": yi.today_cast(conn),
+                "almanac": shi.almanac(), "stats": yi.stats(conn),
                 "history": yi.history(conn), "trends": shi.trends(conn), "momentum": shi.momentum(conn),
                 "stances": {k: v["desc"] + "：" + v["detail"] for k, v in yi.STANCES.items()}}
     if path == "/api/pocket":
@@ -93,7 +102,31 @@ def api_post(path: str, body: dict, conn):
     if path == "/api/capture":
         return memory.capture(body["text"], source="web", conn=conn)
     if path == "/api/yi/today":
-        return yi.cast_today(conn)
+        return yi.cast_today(conn, body.get("intention"))
+    if path == "/api/horizons":
+        return {"id": family.add_horizon(conn, body["title"], body["date"], bool(body.get("with_her", True)),
+                                         int(body["wish_id"]) if body.get("wish_id") else None)}
+    if parts[:2] == ["api", "horizons"] and len(parts) == 4 and parts[3] == "live":
+        family.live_horizon(conn, int(parts[2]), body.get("reflection", ""))
+        return {"ok": True}
+    if path == "/api/rituals":
+        return {"id": family.add_ritual(conn, body["name"], body["cadence"], _int(body.get("weekday")),
+                                        _int(body.get("month")), _int(body.get("day")), body.get("note"))}
+    if parts[:2] == ["api", "rituals"] and len(parts) == 4 and parts[3] == "log":
+        family.log_ritual(conn, int(parts[2]), body.get("note", ""))
+        return {"ok": True}
+    if parts[:2] == ["api", "rituals"] and len(parts) == 4 and parts[3] == "pause":
+        conn.execute("UPDATE rituals SET active = 0 WHERE id = ?", (int(parts[2]),))
+        conn.commit()
+        return {"ok": True}
+    if path == "/api/northstar":
+        return family.set_north_star(conn, body["text"])
+    if path == "/api/places":
+        return family.add_place(conn, body["name"], body.get("visited_on") or None, note=body.get("note"))
+    if path == "/api/photos/scan":
+        return photos.scan(conn)
+    if path == "/api/now/skip_reason":
+        return now.skip_reason(conn, int(body["task_id"]), body["reason"], body.get("first_step"))
     if path == "/api/yi/ask":
         return ask_yi(conn, body["question"])
     if path == "/api/yi/outcome":
@@ -104,8 +137,8 @@ def api_post(path: str, body: dict, conn):
                               int(body.get("strength", 2)), body.get("summary"))}
     if path == "/api/trends/fetch":
         return shi.fetch(conn)
-    if parts[:2] == ["api", "trends"] and len(parts) == 4 and parts[3] == "retire":
-        shi.retire(conn, int(parts[2]))
+    if parts[:2] == ["api", "trends"] and len(parts) == 4 and parts[3] in ("retire", "keep"):
+        (shi.retire if parts[3] == "retire" else shi.keep)(conn, int(parts[2]))
         return {"ok": True}
     if path == "/api/now/skip":
         return now.skip(conn, int(body["task_id"]))
@@ -201,6 +234,10 @@ h3{{margin:0 0 4px}} .price{{color:var(--accent);font-size:22px;font-weight:600;
 <div class="grid">{cards}</div></main></body></html>"""
 
 
+def _int(v) -> int | None:
+    return int(v) if v not in (None, "") else None
+
+
 def _cast_brief(conn) -> dict | None:
     t = yi.today_cast(conn)
     if not t:
@@ -229,7 +266,10 @@ def ask_yi(conn, question: str) -> dict:
 def _yi_text(conn) -> str:
     t = yi.cast_today(conn)
     rd = t["reading"]
-    lines = [f"☯ 今日之卦：{rd['title']}", rd["xiang"], rd["plain"], f"姿态：{rd['stance_text']}", rd["change"]]
+    z = rd["zhuxi"]
+    lines = [f"☯ 今日之卦：{rd['title']}", rd["guaci"], f"《象》曰：{rd['xiang']}", rd["plain"], "", z["rule"]]
+    lines += [m["text"] for m in z["main"]] + [m["text"] for m in z["aux"]]
+    lines += ["", f"姿态：{rd['stance_text']}"]
     if rd.get("trend"):
         lines.append(rd["trend"])
     lines += ["", "自问：" + " / ".join(rd["questions"]), "", rd["note"]]
@@ -255,6 +295,8 @@ TEXT_ROUTES = {
     "/api/capture": lambda conn, q, body: _capture_text(conn, body.get("text") or q.get("text", [""])[0]),
     "/api/morning": lambda conn, q, body: now.morning(conn),
     "/api/yi": lambda conn, q, body: _yi_text(conn),
+    "/api/junzi": lambda conn, q, body: (lambda c: f"{c['symbol']} {c['image']}\n{c['act']}\n——{c['plain']}")(yi.junzi_card()),
+    "/api/shi": lambda conn, q, body: shi.digest(conn),
     "/api/now": lambda conn, q, body: _now_text(conn, q),
     "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
         f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),
@@ -297,6 +339,13 @@ class Handler(BaseHTTPRequestHandler):
             if url.path.startswith("/api/"):
                 r = api_get(url.path, q, conn)
                 return self._json(r) if r is not None else self._json({"error": "not found"}, 404)
+            if url.path.startswith("/photo/"):
+                f = photos.path_of(conn, int(url.path.rsplit("/", 1)[-1]))
+                if not f:
+                    return self._send(404, b"not found", "text/plain")
+                ctype = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
+                         ".heic": "image/heic"}.get(f.suffix.lower(), "application/octet-stream")
+                return self._send(200, f.read_bytes(), ctype)
             if url.path == "/shop":
                 return self._send(200, shop_page(conn).encode(), "text/html; charset=utf-8")
             name = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
@@ -340,7 +389,9 @@ def serve(host: str = "127.0.0.1", port: int = 8765, token: str | None = None) -
     TOKEN = token or TOKEN
     if host not in ("127.0.0.1", "localhost") and not TOKEN:
         raise SystemExit("监听外部地址时必须设置 LIFEOS_TOKEN 环境变量，保护你的私人数据。")
-    db.connect().close()
+    conn = db.connect()
+    family.seed(conn)
+    conn.close()
     if host in ("127.0.0.1", "localhost"):
         print(f"🌐 LifeOS 仪表盘：http://{host}:{port}/    器材橱窗：http://{host}:{port}/shop")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
