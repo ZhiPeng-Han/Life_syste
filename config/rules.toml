@@ -241,6 +241,7 @@ light_dinners_per_week = 4   # 支持她减肥：每周至少几顿轻食晚餐
 [[now_options]]
 title = "出去走 20 分钟，不带目的地"
 minutes = 20
+outdoor = true
 feelings = ["烦躁", "疲惫", "低落", "平静"]
 when = "any"
 
@@ -291,3 +292,32 @@ title = "今晚早点睡"
 minutes = 0
 feelings = ["疲惫", "低落"]
 when = "evening"
+
+# ---------------------------------------------------------------
+# 天时
+# ---------------------------------------------------------------
+[yi]
+enabled = true
+weight = 0.5   # 卦象"姿态"对建议的影响程度：0 = 只看不影响，1 = 影响最大（仍然只是轻重，不改变事实）
+
+[environment]
+city = "伦敦"      # 按你实际所在城市修改（用于天气）
+latitude = 51.51
+longitude = -0.13
+
+# 看看外面：新闻源（RSS）。domain 是默认归属的领域。可增删。
+[[environment.feeds]]
+url = "https://www.dezeen.com/architecture/feed/"
+domain = "建筑工作"
+
+[[environment.feeds]]
+url = "https://petapixel.com/feed/"
+domain = "器材事业"
+
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/business/rss.xml"
+domain = "建筑工作"
+
+[[environment.feeds]]
+url = "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+domain = "自媒体"

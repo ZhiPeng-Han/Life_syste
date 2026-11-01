@@ -5,8 +5,9 @@ from datetime import date, timedelta
 
 os.environ["LIFEOS_HOME"] = tempfile.mkdtemp()
 os.environ["LIFEOS_LLM"] = "off"
+os.environ["LIFEOS_OFFLINE"] = "1"
 
-from lifeos import letter, now
+from lifeos import letter, now, shi, yi
 from lifeos import business, cards, db, decisions, experiments, extract, meals, memory, planner, relationship, review, seed  # noqa: E402
 
 
@@ -169,6 +170,61 @@ class NowTest(unittest.TestCase):
         L = letter.write(conn, save=False)["markdown"]
         self.assertIn("她", L)
         self.assertIn("平静", L)
+
+
+class TianshiTest(unittest.TestCase):
+    def test_hexagram_table_is_complete_and_correct(self):
+        self.assertEqual(len({(u, l) for _, u, l, *_ in yi.HEXAGRAMS}), 64)
+        self.assertEqual(yi.cast([7] * 6)["primary"]["full"], "乾为天")
+        self.assertEqual(yi.cast([8] * 6)["primary"]["full"], "坤为地")
+        self.assertEqual(yi.info(11)["full"], "地天泰")
+        self.assertEqual(yi.info(63)["full"], "水火既济")
+        r = yi.cast([9, 7, 7, 7, 7, 7])  # 乾初九动 → 姤
+        self.assertEqual(r["changed"]["name"], "姤")
+        self.assertEqual(yi.cast([6] * 6)["changed"]["name"], "乾")
+        self.assertTrue(all(yi.toss_line() in (6, 7, 8, 9) for _ in range(200)))
+
+    def test_one_cast_per_day(self):
+        conn = fresh()
+        a, b = yi.cast_today(conn), yi.cast_today(conn)
+        self.assertEqual(a["id"], b["id"])
+        self.assertEqual(yi.today_stance(conn), a["primary"]["stance"])
+
+    def test_stance_factor_is_gentle_and_switchable(self):
+        f = yi.factor("养", "建筑工作", "high")
+        self.assertTrue(0.8 <= f < 1)
+        self.assertEqual(yi.factor(None, "建筑工作", "high"), 1.0)
+        self.assertGreater(yi.factor("合", "关系"), 1)
+
+    def test_momentum(self):
+        conn = fresh()
+        shi.add(conn, "二手镜头涨价", "器材事业", 1, 3)
+        shi.add(conn, "住宅项目放缓", "建筑工作", -1, 4)
+        m = shi.momentum(conn)
+        self.assertGreater(m["器材事业"], 2.9)
+        self.assertLess(m["建筑工作"], -3.9)
+        self.assertGreater(shi.factor(m, "器材事业"), 1)
+        self.assertLess(shi.factor(m, "建筑工作"), 1)
+
+    def test_solar_terms(self):
+        self.assertEqual(shi.solar_term(date(2026, 12, 22))["name"], "冬至")
+        t = shi.solar_term(date(2027, 1, 1))
+        self.assertEqual((t["name"], t["next"]), ("冬至", "小寒"))
+        self.assertEqual(shi.solar_term(date(2026, 2, 10))["name"], "立春")
+
+    def test_tianshi_never_changes_facts(self):
+        conn = fresh()
+        from lifeos import tasks
+        conn.execute("INSERT INTO casts(at, day, kind, lines, hex, stance) VALUES(?,?,?,?,?,?)",
+                     (db.now(), db.today(), "day", "[8,7,8,8,7,8]", 29, "慎"))  # 坎为水：宜谨慎
+        conn.commit()
+        r = business.evaluate_deal(conn, "35/2", 100, est=300)
+        self.assertEqual(r["verdict"], "建议收")  # 结论仍由数据决定
+        self.assertTrue(any("卦象" in x for x in r["reasons"]))
+        tid = tasks.add(conn, "给甲方发图", "建筑工作", 3, "high", 20, due=date.today().isoformat())
+        shi.add(conn, "住宅项目放缓", "建筑工作", -1, 5)
+        c = next(c for c in now.candidates(conn, "充沛") if c.get("task_id") == tid)
+        self.assertNotIn("逆势", c["reason"])  # 有期限的事不被势影响
 
 
 class MiscTest(unittest.TestCase):

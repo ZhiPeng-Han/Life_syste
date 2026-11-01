@@ -7,7 +7,7 @@
 from collections import Counter
 from datetime import date, timedelta
 
-from . import config, db, llm, now
+from . import config, db, llm, now, shi, yi
 
 QUESTIONS = [
     "这周哪一刻，你最像你自己？",
@@ -39,6 +39,8 @@ def gather(conn, end: date) -> dict:
         f"SELECT title FROM tasks WHERE status = 'let_go' AND {in_week.format(col='done_at')}", (s, e)))
     sold = db.rows(conn.execute(f"SELECT model, sell_price FROM items WHERE {in_week.format(col='sold_at')}", (s, e)))
     wishes_done = db.rows(conn.execute("SELECT content FROM wishes WHERE status = '已实现'"))
+    casts = [c for c in yi.history(conn, 50) if s <= c["day"] <= e]
+    world = [t for t in shi.trends(conn, 50) if t["direction"] and s <= t["observed_at"][:10] <= e]
     return {
         "start": s, "end": e,
         "weather": Counter(x["feeling"] for x in states),
@@ -49,6 +51,8 @@ def gather(conn, end: date) -> dict:
         "sold": sold,
         "wishes_done": [w["content"] for w in wishes_done],
         "question": QUESTIONS[end.isocalendar().week % len(QUESTIONS)],
+        "casts": casts,
+        "world": world,
     }
 
 
@@ -73,6 +77,14 @@ def _template(d: dict) -> str:
         L += ["## 你做到的", ""] + [f"- {t}" for t in d["done"][:10]]
         L += [f"- 卖出了 {s['model']}（{cur}{s['sell_price']:.0f}）" for s in d["sold"]]
         L.append("")
+    if d["casts"]:
+        L += ["## 这周的卦", ""]
+        for c in d["casts"]:
+            q = c["question"] or "今日"
+            L.append(f"- {c['day']} {q}：{c['title']}" + (f"。后来：{c['outcome']}" if c["outcome"] else ""))
+        L.append("")
+    if d["world"]:
+        L += ["## 外面的势", ""] + [f"- {'顺' if t['direction'] > 0 else '逆'}｜{t['title']}" for t in d["world"][:3]] + [""]
     if d["let_go"]:
         L += ["## 你放下的", "", "、".join(d["let_go"]) + "。放下也是一种选择。", ""]
     if len(L) <= 2:

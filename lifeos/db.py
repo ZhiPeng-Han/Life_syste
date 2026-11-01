@@ -219,6 +219,36 @@ MIGRATIONS = [
     );
     ALTER TABLE tasks ADD COLUMN skips INTEGER DEFAULT 0;
     """,
+    # v3：天时——起卦记录、天下大势
+    """
+    CREATE TABLE casts (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        day TEXT NOT NULL,
+        kind TEXT NOT NULL,            -- day（今日之卦）/ ask（问一事）
+        question TEXT,
+        lines TEXT NOT NULL,           -- 六爻自下而上的 6/7/8/9
+        hex INTEGER NOT NULL,
+        changed INTEGER,
+        stance TEXT,
+        reading TEXT,
+        outcome TEXT                   -- 后来怎样了（自己回来写）
+    );
+
+    CREATE TABLE trends (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        summary TEXT,
+        domain TEXT,
+        direction INTEGER DEFAULT 0,   -- 1 顺势 / -1 逆势 / 0 只是观察
+        strength INTEGER DEFAULT 2,    -- 1-5
+        source TEXT DEFAULT 'me',      -- me / news / ai
+        url TEXT,
+        observed_at TEXT NOT NULL,
+        status TEXT DEFAULT 'active'
+    );
+    CREATE INDEX idx_casts_day ON casts(day, kind);
+    """,
 ]
 
 

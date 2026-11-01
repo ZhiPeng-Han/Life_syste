@@ -135,3 +135,9 @@ h3.sub { font-size: 14px; color: var(--muted); margin: 16px 0 4px; }
 .more a:last-child { border: 0; }
 .letter { font-size: 16px; line-height: 1.8; }
 a { color: var(--accent); }
+
+/* ---------- v0.3 天时 ---------- */
+svg.hex { width: 140px; flex: none; }
+.hex-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+.xiang { font-family: "Songti SC", "Noto Serif SC", "STSong", serif; font-size: 16px; }
+.up { color: var(--ok); } .down { color: var(--bad); }

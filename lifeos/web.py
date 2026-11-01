@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, db, decisions, letter, meals, memory, now, planner, relationship, review, tasks)
+from . import (business, config, db, decisions, letter, meals, memory, now, planner, relationship, review, shi, tasks, yi)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -32,7 +32,8 @@ def api_get(path: str, q: dict, conn):
                 "feelings": {k: v["icon"] for k, v in now.FEELINGS.items()},
                 "anchors": now.anchors(t.date(), t.hour * 60 + t.minute), "echo": now.echo(conn),
                 "dated": [x for x in p["dated"] if x["days_left"] <= 2], "pocket_count": p["count"],
-                "dates": relationship.upcoming_dates(conn, horizon=14)}
+                "dates": relationship.upcoming_dates(conn, horizon=14),
+                "term": shi.solar_term(), "weather": shi.weather(conn), "cast": _cast_brief(conn)}
     if path == "/api/now":
         exclude = [x for x in one("exclude", "").split(",") if x]
         minutes = int(one("minutes")) if one("minutes") else None
@@ -42,6 +43,10 @@ def api_get(path: str, q: dict, conn):
         if one("note"):
             sug["ai"] = now.ai_note(conn, one("feeling"), one("note"), sug)
         return sug
+    if path == "/api/tianshi":
+        return {"term": shi.solar_term(), "weather": shi.weather(conn), "today": yi.today_cast(conn),
+                "history": yi.history(conn), "trends": shi.trends(conn), "momentum": shi.momentum(conn),
+                "stances": {k: v["desc"] + "：" + v["detail"] for k, v in yi.STANCES.items()}}
     if path == "/api/pocket":
         return now.pocket(conn)
     if path == "/api/letter":
@@ -87,6 +92,21 @@ def api_post(path: str, body: dict, conn):
     parts = path.strip("/").split("/")  # ["api", "items", "L-2026-001"]
     if path == "/api/capture":
         return memory.capture(body["text"], source="web", conn=conn)
+    if path == "/api/yi/today":
+        return yi.cast_today(conn)
+    if path == "/api/yi/ask":
+        return ask_yi(conn, body["question"])
+    if path == "/api/yi/outcome":
+        yi.note_outcome(conn, int(body["id"]), body["outcome"])
+        return {"ok": True}
+    if path == "/api/trends":
+        return {"id": shi.add(conn, body["title"], body.get("domain") or None, int(body.get("direction", 0)),
+                              int(body.get("strength", 2)), body.get("summary"))}
+    if path == "/api/trends/fetch":
+        return shi.fetch(conn)
+    if parts[:2] == ["api", "trends"] and len(parts) == 4 and parts[3] == "retire":
+        shi.retire(conn, int(parts[2]))
+        return {"ok": True}
     if path == "/api/now/skip":
         return now.skip(conn, int(body["task_id"]))
     if path == "/api/now/letgo":
@@ -181,6 +201,41 @@ h3{{margin:0 0 4px}} .price{{color:var(--accent);font-size:22px;font-weight:600;
 <div class="grid">{cards}</div></main></body></html>"""
 
 
+def _cast_brief(conn) -> dict | None:
+    t = yi.today_cast(conn)
+    if not t:
+        return None
+    p = t["primary"]
+    return {"symbol": p["symbol"], "full": p["full"], "stance": p["stance_desc"], "xiang": p["xiang"]}
+
+
+def ask_yi(conn, question: str) -> dict:
+    """问一事：起卦 → 解读（有 Claude 时结合他的近况）→ 记录。"""
+    r = yi.cast()
+    reading = yi.interpret(r, question)
+    recent = db.rows(conn.execute("SELECT content FROM memories ORDER BY occurred_at DESC LIMIT 12"))
+    feeling = conn.execute("SELECT feeling FROM states ORDER BY id DESC LIMIT 1").fetchone()
+    context = "\n".join([f"- 最近的感受：{feeling[0] if feeling else '未知'}",
+                         f"- 节气：{shi.solar_term()['name']}",
+                         "- 各领域之势：" + ("，".join(f"{k} {v:+}" for k, v in shi.momentum(conn).items()) or "无记录")]
+                        + [f"- {m['content']}" for m in recent])
+    reading["ai"] = yi.ai_reflect(conn, r, question, context)
+    cid = yi.save(conn, r, question, "ask")
+    conn.execute("UPDATE casts SET reading = ? WHERE id = ?", (json.dumps(reading, ensure_ascii=False), cid))
+    conn.commit()
+    return {"id": cid, **r, "reading": reading}
+
+
+def _yi_text(conn) -> str:
+    t = yi.cast_today(conn)
+    rd = t["reading"]
+    lines = [f"☯ 今日之卦：{rd['title']}", rd["xiang"], rd["plain"], f"姿态：{rd['stance_text']}", rd["change"]]
+    if rd.get("trend"):
+        lines.append(rd["trend"])
+    lines += ["", "自问：" + " / ".join(rd["questions"]), "", rd["note"]]
+    return "\n".join(lines)
+
+
 def _now_text(conn, q) -> str:
     feeling = q.get("feeling", ["平静"])[0].strip() or "平静"
     minutes = q.get("minutes", [""])[0]
@@ -199,6 +254,7 @@ TEXT_ROUTES = {
     "/api/today": lambda conn, q, body: planner.render(planner.plan(conn=conn)),
     "/api/capture": lambda conn, q, body: _capture_text(conn, body.get("text") or q.get("text", [""])[0]),
     "/api/morning": lambda conn, q, body: now.morning(conn),
+    "/api/yi": lambda conn, q, body: _yi_text(conn),
     "/api/now": lambda conn, q, body: _now_text(conn, q),
     "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
         f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),

@@ -5,7 +5,7 @@ import re
 import statistics
 from datetime import date
 
-from . import config, db
+from . import config, db, shi, yi
 
 STATUSES = ["待检测", "待拍照", "在售", "已售", "已发货", "完结"]
 SOLD = ("已售", "已发货", "完结")
@@ -154,6 +154,14 @@ def evaluate_deal(conn, model: str, price: float, defects=None, platform=None, e
         verdict = f"还价到 {max(target, 0):.0f} 以下再收"
     else:
         verdict = "跳过"
+    stance = yi.today_stance(conn)
+    if stance and yi.STANCES[stance].get("deal") and verdict != "跳过":
+        reasons.append(f"☯ 今日卦象{yi.STANCES[stance]['desc']}：数据之外，问问自己是不是有点急。结论仍以数据为准。")
+    mom = shi.momentum(conn).get("器材事业", 0)
+    if mom <= -1.5:
+        reasons.append("🌏 器材市场近期逆势：宜快进快出，少压库存。")
+    elif mom >= 1.5:
+        reasons.append("🌏 器材市场近期顺势。")
     return {"verdict": verdict, "expected_profit": profit, "est_price": est, "ratio": round(ratio, 3), "reasons": reasons}
 
 

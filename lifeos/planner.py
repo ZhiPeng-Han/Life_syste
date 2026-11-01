@@ -8,7 +8,7 @@
 
 from datetime import date, timedelta
 
-from . import business, cards, config, db, decisions, meals, memory, relationship
+from . import business, cards, config, db, decisions, meals, memory, relationship, shi, yi
 
 ENERGY_RANK = {"high": 3, "medium": 2, "low": 1}
 
@@ -49,8 +49,17 @@ def free_slots(blocks: list[dict]) -> list[tuple[int, int]]:
     return slots
 
 
-def task_score(task: dict, on: date, slot_e: str | None = None, prev_domain: str | None = None) -> float:
+def context(conn) -> dict:
+    """天时：今日卦象的姿态 + 各领域之势。"""
+    return {"stance": yi.today_stance(conn), "mom": shi.momentum(conn)}
+
+
+def task_score(task: dict, on: date, slot_e: str | None = None, prev_domain: str | None = None,
+               ctx: dict | None = None) -> float:
     s = task["priority"] * config.domain_weight(task.get("domain") or "")
+    if ctx and not (task.get("due") and date.fromisoformat(task["due"]) <= on + timedelta(days=1)):
+        s *= yi.factor(ctx["stance"], task.get("domain"), task.get("energy"), "task", task.get("skips") or 0)
+        s *= shi.factor(ctx["mom"], task.get("domain"))
     if task.get("due"):
         days = (date.fromisoformat(task["due"]) - on).days
         s *= 2.0 if days < 0 else 1.8 if days == 0 else 1.4 if days <= 3 else 1.0
@@ -69,6 +78,7 @@ def plan(on: date | None = None, conn=None, record: bool = True) -> dict:
     on = on or date.today()
     blocks = blocks_for(on)
     slots = free_slots(blocks)
+    ctx = context(conn)
     tasks = db.rows(conn.execute("SELECT * FROM tasks WHERE status = 'todo'"))
     tasks = [t for t in tasks if not t.get("due") or date.fromisoformat(t["due"]) >= on - timedelta(days=30)]
     budget = sum(e - s for s, e in slots) * (1 - config.rules().get("general", {}).get("buffer_ratio", 0.2))
@@ -77,7 +87,7 @@ def plan(on: date | None = None, conn=None, record: bool = True) -> dict:
     # 和她有关的任务直接挂到今天的约会块里，变成"可以一起做/聊的事"，不占用空闲时间
     love_blocks = [b for b in blocks if b["domain"] == "关系"]
     if love_blocks:
-        together = sorted((t for t in remaining if t["domain"] == "关系"), key=lambda t: -task_score(t, on))[:2]
+        together = sorted((t for t in remaining if t["domain"] == "关系"), key=lambda t: -task_score(t, on, ctx=ctx))[:2]
         love_blocks[0]["with"] = [{"id": t["id"], "title": t["title"]} for t in together]
         for t in together:
             remaining.remove(t)
@@ -88,7 +98,7 @@ def plan(on: date | None = None, conn=None, record: bool = True) -> dict:
             fits = [t for t in remaining if (t["est_minutes"] or 30) <= room]
             if not fits:
                 break
-            best = max(fits, key=lambda t: task_score(t, on, slot_energy(cursor), prev))
+            best = max(fits, key=lambda t: task_score(t, on, slot_energy(cursor), prev, ctx))
             dur = best["est_minutes"] or 30
             scheduled.append({"start": cursor, "end": cursor + dur, "title": best["title"], "domain": best["domain"],
                               "kind": "task", "task_id": best["id"]})
@@ -112,6 +122,7 @@ def plan(on: date | None = None, conn=None, record: bool = True) -> dict:
         "nudges": nudges,
         "dinner": meals.tonight(conn, on),
         "autonomy_level": decisions.LEVEL_NAMES[decisions.level(conn, "daily_plan")],
+        "stance": yi.STANCES[ctx["stance"]]["desc"] if ctx["stance"] else None,
     }
     if record:
         key = f"plan:{on.isoformat()}"

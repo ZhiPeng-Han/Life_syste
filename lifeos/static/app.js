@@ -385,7 +385,8 @@ async function renderNow(el) {
   const morning = h.hour >= 5 && h.hour < 11;
   const anchors = h.anchors.filter((a) => !a.includes("💼"));
   el.innerHTML = `
-    <p class="greet">${esc(h.greeting)}</p>
+    <p class="greet">${esc(h.greeting)} ${esc(h.term.name)}时节${h.weather ? ` · ${h.weather.icon} ${esc(h.weather.label)} ${h.weather.tmin}–${h.weather.tmax}°C` : ""}</p>
+    <p class="small"><a href="#tianshi">${h.cast ? `☯ ${h.cast.symbol} ${esc(h.cast.full)} · ${esc(h.cast.stance)}` : "☯ 今日还未起卦 →"}</a></p>
     <h1 class="ask">你现在感觉怎么样？</h1>
     <div class="feelings">${Object.entries(h.feelings).map(([f, i]) =>
       `<button class="feel ${NOW.feeling === f ? "on" : ""}" data-f="${f}"><span>${i}</span>${f}</button>`).join("")}</div>
@@ -538,8 +539,111 @@ async function renderMore(el) {
     <p class="small muted">这个系统的原则：它替你记住，在你需要时帮你做个小决定；其余时候，它安静。你是生活的主体。</p>`;
 }
 
+
+// ------------------------------------------------------------------ 天时
+function hexSvg(lines, upto = 6) {
+  // lines：自下而上的 6/7/8/9；画的时候从上往下
+  const rows = [];
+  for (let i = 5; i >= 0; i--) {
+    const y = (5 - i) * 22 + 4, v = lines[i], shown = i < upto;
+    const color = v === 6 || v === 9 ? "var(--accent)" : "var(--fg)";
+    const op = shown ? 1 : 0.08;
+    rows.push(v === 7 || v === 9
+      ? `<rect x="10" y="${y}" width="140" height="12" rx="2" fill="${color}" opacity="${op}"/>`
+      : `<rect x="10" y="${y}" width="62" height="12" rx="2" fill="${color}" opacity="${op}"/><rect x="88" y="${y}" width="62" height="12" rx="2" fill="${color}" opacity="${op}"/>`);
+    if (shown && (v === 6 || v === 9)) rows.push(`<text x="160" y="${y + 11}" font-size="13" fill="var(--accent)">${v === 9 ? "○" : "×"}</text>`);
+  }
+  return `<svg viewBox="0 0 180 136" class="hex">${rows.join("")}</svg>`;
+}
+
+function readingHtml(r) {
+  const rd = r.reading;
+  return `<div class="row" style="align-items:flex-start;gap:16px">${hexSvg(r.lines)}
+      <div style="flex:1;min-width:180px"><div class="hex-title">${esc(rd.title)}</div>
+      <p class="xiang">《象》曰：${esc(rd.xiang)}</p><p>${esc(rd.plain)}</p>
+      <span class="chip">${esc(rd.stance_text)}</span></div></div>
+    <p class="small muted">${esc(rd.change)}</p>
+    ${rd.trend ? `<p class="small">${esc(rd.trend)}</p>` : ""}
+    ${rd.ai ? `<div class="echo">${esc(rd.ai).replace(/\n/g, "<br>")}</div>` : ""}
+    <p class="small"><b>自问</b><br>${rd.questions.map(esc).join("<br>")}</p>
+    <p class="small muted">${esc(rd.note)}</p>`;
+}
+
+async function revealCast(el, r) {
+  // 一爻一爻地出现：仪式感，也让人慢下来
+  for (let k = 1; k <= 6; k++) {
+    el.innerHTML = `<div class="row">${hexSvg(r.lines, k)}<span class="muted small">第 ${k} 爻…</span></div>`;
+    await new Promise((ok) => setTimeout(ok, 380));
+  }
+  el.innerHTML = readingHtml(r);
+}
+
+async function renderTianshi(el) {
+  const d = await api("/api/tianshi");
+  const dir = { 1: "顺", "-1": "逆", 0: "观" };
+  const mom = Object.entries(d.momentum).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  el.innerHTML = `
+    <p class="greet">🌿 ${esc(d.term.name)}　${esc(d.term.tip)} <span class="small">（距${esc(d.term.next)} ${d.term.days_to_next} 天）</span></p>
+    ${d.weather ? `<p class="muted">${d.weather.icon} ${esc(d.weather.city)} ${esc(d.weather.label)} ${d.weather.tmin}–${d.weather.tmax}°C</p>` : ""}
+    <h2>☯ 今日之卦</h2>
+    <div class="card" id="day-cast">${d.today ? readingHtml(d.today) : `
+      <p>心里想着今天，静一静，然后起一卦。</p>
+      <p class="small muted">三枚铜钱，掷六次。一天只起一次：命不能重抽。</p>
+      <button class="btn primary" id="cast-day">起卦</button>`}</div>
+    <h2>🤔 问一事</h2>
+    <form class="card" id="ask-form">
+      <textarea name="question" rows="2" style="width:100%" placeholder="心里犹豫的一件事，比如：要不要这个月把器材生意做大一点？" required></textarea>
+      <button class="btn primary" style="margin-top:8px">起卦</button>
+      <div id="ask-result" style="margin-top:12px"></div>
+    </form>
+    <h2>🌏 天下大势</h2>
+    ${mom.length ? `<div class="card">${mom.map(([k, v]) => `<div class="row" style="justify-content:space-between"><span>${esc(k)}</span>
+      <span class="small ${v > 0 ? "up" : "down"}">${v > 0 ? "顺势" : "逆势"} ${Math.abs(v)}</span></div>
+      <div class="bar"><i style="width:${Math.min(Math.abs(v) / 6 * 100, 100)}%;background:${v > 0 ? "var(--ok)" : "var(--bad)"}"></i></div>`).join("")}</div>` : ""}
+    <div class="card">${d.trends.map((t) => `<div class="mem"><div class="row small muted"><span class="chip">${dir[t.direction]}${t.strength}</span>
+        <span>${esc(t.domain || "—")}</span><span>${t.observed_at.slice(0, 10)}</span>
+        <button class="btn sm" onclick="retireTrend(${t.id})">过时了</button></div>
+        <div>${esc(t.title)}</div>${t.summary ? `<div class="small muted">${esc(t.summary)}</div>` : ""}</div>`).join("") ||
+        '<p class="muted">还没有记录。你观察到的任何趋势都可以记下来：行业冷暖、器材行情、物价、新工具……</p>'}
+      <form class="inline" id="trend-form" style="margin-top:10px">
+        <input name="title" placeholder="你观察到的势" required>
+        <select name="domain"><option value="">领域</option>${META.domains.map((x) => `<option>${esc(x)}</option>`).join("")}</select>
+        <select name="direction"><option value="1">对我顺势</option><option value="-1">对我逆势</option><option value="0" selected>只是观察</option></select>
+        <select name="strength">${[1, 2, 3, 4, 5].map((n) => `<option ${n === 2 ? "selected" : ""}>${n}</option>`).join("")}</select>
+        <button class="btn">记下</button></form>
+      <button class="btn sm" id="fetch-trends" style="margin-top:8px">看看外面（新闻源）</button></div>
+    <h2>📜 过去的卦</h2>
+    <div class="card">${d.history.map((c) => `<div class="mem"><div class="small muted">${c.day} · ${esc(c.question || "今日之卦")}</div>
+        <div>${esc(c.title)}</div>
+        ${c.outcome ? `<div class="small">后来：${esc(c.outcome)}</div>` : `<button class="btn sm" onclick="castOutcome(${c.id})">后来怎样了？</button>`}</div>`).join("") ||
+        '<p class="muted">还没有起过卦。</p>'}</div>
+    <p class="small muted">卦是一面镜子，不是预言；势是风向，不是命令。它们只会让建议轻一点或重一点，从不改变事实。影响程度可在 rules.toml 的 [yi] weight 调整。</p>`;
+  const cb = $("#cast-day");
+  if (cb) cb.onclick = async () => { const r = await api("/api/yi/today", {}); await revealCast($("#day-cast"), r); };
+  $("#ask-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const q = new FormData(e.target).get("question");
+    const box = $("#ask-result");
+    box.innerHTML = '<p class="muted small">起卦中…</p>';
+    const r = await api("/api/yi/ask", { question: q });
+    await revealCast(box, r);
+  };
+  $("#trend-form").onsubmit = async (e) => { e.preventDefault(); await api("/api/trends", Object.fromEntries(new FormData(e.target))); render("tianshi"); };
+  $("#fetch-trends").onclick = async () => {
+    toast("去外面看看…");
+    const r = await api("/api/trends/fetch", {});
+    toast(r.added ? `带回 ${r.added} 条` : "没有新的，或者网络不通");
+    render("tianshi");
+  };
+}
+async function retireTrend(id) { await api(`/api/trends/${id}/retire`, {}); render("tianshi"); }
+async function castOutcome(id) {
+  const o = prompt("后来怎样了？（这是写给自己的）");
+  if (o) { await api("/api/yi/outcome", { id, outcome: o }); render("tianshi"); }
+}
+
 // ------------------------------------------------------------------ 框架
-const RENDER = { now: renderNow, pocket: renderPocket, her: renderHer, memory: renderMemory, gear: renderGear, letter: renderLetter, more: renderMore,
+const RENDER = { now: renderNow, pocket: renderPocket, her: renderHer, tianshi: renderTianshi, memory: renderMemory, gear: renderGear, letter: renderLetter, more: renderMore,
   today: renderToday, graph: renderGraph, review: renderReview, system: renderSystem };
 const TAB_OF = { today: "more", graph: "more", review: "more", system: "more" };
 let current = "now";

@@ -6,7 +6,7 @@ import sys
 from datetime import date
 
 from . import (__version__, business, cards, config, db, decisions, experiments, letter, llm, meals, memory, now,
-               planner, relationship, review, seed, tasks)
+               planner, relationship, review, seed, shi, tasks, yi)
 
 
 def out(obj) -> None:
@@ -79,6 +79,62 @@ def cmd_morning(a, conn):
 
 def cmd_letter(a, conn):
     out(letter.write(conn)["markdown"])
+
+
+def _print_reading(rd: dict) -> None:
+    out(f"\n☯ {rd['title']}\n《象》曰：{rd['xiang']}\n{rd['plain']}\n姿态：{rd['stance_text']}\n{rd['change']}")
+    if rd.get("trend"):
+        out(rd["trend"])
+    if rd.get("ai"):
+        out("\n" + rd["ai"])
+    out("\n自问：\n" + "\n".join(f"  · {q}" for q in rd["questions"]) + f"\n\n{rd['note']}")
+
+
+def cmd_yi(a, conn):
+    if a.action == "history":
+        for c in yi.history(conn):
+            out(f"#{c['id']} {c['day']} {c['question'] or '今日'}：{c['title']}" + (f" ｜后来：{c['outcome']}" if c["outcome"] else ""))
+        return
+    if a.action == "outcome":
+        yi.note_outcome(conn, a.id, " ".join(a.text))
+        out("记下了。")
+        return
+    if a.ask:
+        input(f"心里想着：「{a.ask}」。准备好了按回车，掷六次铜钱…")
+        from . import web
+
+        r = web.ask_yi(conn, a.ask)
+    else:
+        r = yi.cast_today(conn)
+    lines = r["lines"]
+    for i in range(5, -1, -1):
+        v = lines[i]
+        bar = "━━━━━━━" if v in (7, 9) else "━━━ ━━━"
+        out(f"  {bar} {'○' if v == 9 else '×' if v == 6 else ''}")
+    _print_reading(r["reading"])
+
+
+def cmd_shi(a, conn):
+    if a.action == "add":
+        tid = shi.add(conn, " ".join(a.text), a.domain, a.direction, a.strength)
+        out(f"🌏 记下第 {tid} 条势")
+    elif a.action == "fetch":
+        out(shi.fetch(conn))
+    elif a.action == "retire":
+        shi.retire(conn, int(a.text[0]))
+        out("✓")
+    else:
+        term = shi.solar_term()
+        out(f"🌿 {term['name']}：{term['tip']}（距{term['next']} {term['days_to_next']} 天）")
+        w = shi.weather(conn)
+        if w:
+            out(f"{w['icon']} {w['city']} {w['label']} {w['tmin']}–{w['tmax']}°C")
+        mom = shi.momentum(conn)
+        if mom:
+            out("各领域之势：" + "，".join(f"{k} {'顺' if v > 0 else '逆'}{abs(v)}" for k, v in sorted(mom.items(), key=lambda x: -abs(x[1]))))
+        for t in shi.trends(conn):
+            d = {1: "顺", -1: "逆", 0: "观"}[t["direction"]]
+            out(f"#{t['id']} [{d}{t['strength']}] [{t['domain'] or '—'}] {t['title']}")
 
 
 def cmd_today(a, conn):
@@ -338,6 +394,21 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("letgo", help="放下一件事")
     s.add_argument("ids", nargs="+", type=int)
     s.set_defaults(fn=cmd_letgo)
+
+    s = sub.add_parser("yi", help="起卦：今日之卦 / --ask 问一事 / history / outcome")
+    s.add_argument("action", nargs="?", choices=["today", "history", "outcome"], default="today")
+    s.add_argument("--ask", help="心里犹豫的一件事")
+    s.add_argument("--id", type=int)
+    s.add_argument("text", nargs="*")
+    s.set_defaults(fn=cmd_yi)
+
+    s = sub.add_parser("shi", help="势：天下大势 list / add / fetch / retire")
+    s.add_argument("action", nargs="?", choices=["list", "add", "fetch", "retire"], default="list")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--domain", "-d")
+    s.add_argument("--direction", type=int, default=0, choices=[-1, 0, 1], help="1 顺势 / -1 逆势 / 0 观察")
+    s.add_argument("--strength", type=int, default=2, choices=range(1, 6))
+    s.set_defaults(fn=cmd_shi)
 
     sub.add_parser("morning", help="早安：今天的节律、有期限的事、一个回响").set_defaults(fn=cmd_morning)
     sub.add_parser("letter", help="一封信：写给这一周的你").set_defaults(fn=cmd_letter)

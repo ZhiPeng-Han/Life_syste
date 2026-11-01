@@ -1,9 +1,12 @@
-# Life_syste · LifeOS v0.2
+# Life_syste · LifeOS v0.3
 
 一个陪你生活的 AI 系统。它**替你记住**（杂事、她说过的话、发生过的美好），在你**需要时帮你做个小决定**；其余时候，它安静。
 
 > 你是生活的主体，不是被管理的系统。 → [docs/主体性-设计反思.md](docs/主体性-设计反思.md)
+>
+> 天行健，君子以自强不息；地势坤，君子以厚德载物。 → [docs/天行健地势坤.md](docs/天行健地势坤.md)
 
+- ☯ 天行健，地势坤（家庭、天道与命）：[docs/天行健地势坤.md](docs/天行健地势坤.md)
 - 🌿 v0.2 设计反思：[docs/主体性-设计反思.md](docs/主体性-设计反思.md)
 - 📄 最初的设计方案：[docs/LifeOS-方案.md](docs/LifeOS-方案.md)
 - ❤️ 她的三个愿望 · 行动计划：[docs/她的三个愿望-行动计划.md](docs/她的三个愿望-行动计划.md)
@@ -38,7 +41,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | 累了、犹豫、不想想 | 说出感受，得到一个可能性（可以换、可以不做） | `python -m lifeos now` |
 | 想处理杂事 | 看口袋，拿一件，或者放下一件 | `python -m lifeos pocket` / `letgo ID` |
 | 遇到捡漏 | 收不收？ | `python -m lifeos deal --model "50/1.4" --price 180 --defects 雾` |
-| 早上 | 一段问候，不是时间表 | `python -m lifeos morning` |
+| 早上 | 一段问候：节气、天气、今日之卦、大势 | `python -m lifeos morning` |
+| 想起一卦 | 今日之卦，或问一件犹豫的事 | `python -m lifeos yi` / `yi --ask "…"` |
+| 观察到某种趋势 | 记下天下大势（顺 / 逆 / 观） | `python -m lifeos shi add 二手镜头涨价 -d 器材事业 --direction 1` |
 | 周末 | 一封写给这一周的你的信 | `python -m lifeos letter` |
 | 交图、考试前 | 这时才需要时间表 | `python -m lifeos today` |
 
@@ -46,7 +51,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 <summary>全部命令</summary>
 
 ```
-init / phone / add / now / pocket / letgo / morning / letter / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
+init / phone / add / now / pocket / letgo / morning / letter / yi / shi / today / checkin / t（记录时间）/ task / search / confirm / fb / autonomy
 item（库存：add/set/sell/list/stats）/ deal（捡漏评估）/ her / wish / date / menu
 card（Part 3 卡片）/ exp（个人实验）/ decide（决策日志）/ review / manual / consolidate / serve / bot
 ```

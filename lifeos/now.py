@@ -9,7 +9,7 @@
 import random
 from datetime import date, datetime, timedelta
 
-from . import config, db, llm, planner, relationship
+from . import config, db, llm, planner, relationship, shi, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -56,10 +56,23 @@ def _task_reason(task: dict, feeling: str, today: date) -> str:
     return f"{FEELINGS[feeling]['say']}。" + "，".join(parts) + "。"
 
 
+def _tian_note(stance: str | None, mom: dict, domain: str | None, f: float) -> str:
+    notes = []
+    if stance and abs(f - 1) >= 0.05:
+        notes.append(f"今日卦象{yi.STANCES[stance]['desc']}")
+    d = shi.describe(mom, domain)
+    if d:
+        notes.append(d)
+    return f"（{'；'.join(notes)}）" if notes else ""
+
+
 def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | None = None) -> list[dict]:
     f = FEELINGS.get(feeling, FEELINGS["平静"])
     at = at or datetime.now()
     today = at.date()
+    ctx = planner.context(conn)
+    stance = ctx["stance"]
+    wx = shi.weather(conn, today)
     out = []
     for t in db.rows(conn.execute("SELECT * FROM tasks WHERE status = 'todo'")):
         if minutes is not None and (t["est_minutes"] or 30) > minutes:
@@ -76,8 +89,12 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
             # 烦躁、低落的时候先照顾好自己，再去照顾关系；平静的晚上最适合和她相关的事
             score *= 0.4 if feeling in ("烦躁", "低落") else 1.3 if _is_evening(at) else 1.0
         score /= 1 + 0.4 * (t["skips"] or 0)
+        # 有期限的事是事实：天时不改变它，也不给它加注
+        tian = 1.0 if urgent else yi.factor(stance, t["domain"], t["energy"], "task", t["skips"] or 0) * shi.factor(ctx["mom"], t["domain"])
+        note = "" if urgent else _tian_note(stance, ctx["mom"], t["domain"], tian)
         out.append({"kind": "task", "task_id": t["id"], "title": t["title"], "domain": t["domain"],
-                    "minutes": t["est_minutes"] or 30, "score": score, "reason": _task_reason(t, feeling, today)})
+                    "minutes": t["est_minutes"] or 30, "score": score * tian,
+                    "reason": _task_reason(t, feeling, today) + note})
     for i, o in enumerate(config.rules().get("now_options", [])):
         if feeling not in o.get("feelings", []):
             continue
@@ -86,9 +103,12 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
         when = o.get("when", "any")
         if (when == "evening" and not _is_evening(at)) or (when == "day" and (at.hour < 7 or at.hour >= 18)):
             continue
+        if o.get("outdoor") and wx and wx.get("wet"):
+            continue  # 外面在下雨
+        tian = yi.factor(stance, None, kind="care")
         out.append({"kind": "care", "option_id": i, "title": o["title"], "domain": "此刻",
-                    "minutes": o.get("minutes", 0), "score": 4.0 * f["care"],
-                    "reason": f"{f['say']}。这不是任务，是照顾一下自己。"})
+                    "minutes": o.get("minutes", 0), "score": 4.0 * f["care"] * tian,
+                    "reason": f"{f['say']}。这不是任务，是照顾一下自己。" + _tian_note(stance, {}, None, tian)})
     return sorted(out, key=lambda c: -c["score"])
 
 
@@ -177,7 +197,17 @@ def anchors(on: date, after_minute: int = 0) -> list[str]:
 def morning(conn, on: date | None = None) -> str:
     on = on or date.today()
     p = pocket(conn, on)
-    lines = [f"早安。今天是周{'一二三四五六日'[on.weekday()]}。"]
+    term = shi.solar_term(on)
+    lines = [f"早安。今天是周{'一二三四五六日'[on.weekday()]}，{term['name']}时节。{term['tip']}"]
+    wx = shi.weather(conn, on)
+    if wx:
+        lines.append(f"{wx['icon']} {wx['city']}{wx['label']}，{wx['tmin']}–{wx['tmax']}°C")
+    tc = yi.today_cast(conn, on.isoformat())
+    if tc:
+        p0 = tc["primary"]
+        lines.append(f"☯ 今日之卦：{p0['symbol']} {p0['full']}，{p0['stance_desc']}。{p0['xiang']}")
+    else:
+        lines.append("☯ 想的话，心里想着今天，起一卦。")
     a = [x for x in anchors(on) if "❤️" in x or "🍳" in x]
     if a:
         lines.append("🌿 今天的节律：" + "；".join(a))
@@ -191,6 +221,10 @@ def morning(conn, on: date | None = None) -> str:
     e = echo(conn, on)
     if e:
         lines.append(f"✨ {e}")
+    top = sorted(shi.trends(conn, 50), key=lambda t: -t["weight"])
+    if top and top[0]["weight"] >= 1:
+        t = top[0]
+        lines.append(f"🌏 大势：{t['title']}（{'顺' if t['direction'] > 0 else '逆' if t['direction'] < 0 else '观'}）")
     lines.append("需要的时候问我「现在做什么」。什么都不问，也很好。")
     return "\n".join(lines)
 
