@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, db, decisions, family, letter, meals, memory, mind, now, photos, planner, relationship, review,
+from . import (business, config, daily, db, decisions, family, letter, meals, memory, mind, now, photos, planner, relationship, review,
                shi, tasks, yi)
 
 STATIC = Path(__file__).parent / "static"
@@ -36,7 +36,8 @@ def api_get(path: str, q: dict, conn):
                 "dates": relationship.upcoming_dates(conn, horizon=14),
                 "term": shi.solar_term(), "weather": shi.weather(conn), "cast": _cast_brief(conn),
                 "horizons": family.horizons(conn), "rituals": [r for r in family.rituals(conn) if r["gentle"]],
-                "photos": photos.on_this_day(conn), "skip_reasons": list(now.SKIP_REASONS)}
+                "photos": photos.on_this_day(conn), "skip_reasons": list(now.SKIP_REASONS),
+                "notes": daily.notes(conn)}
     if path == "/api/now":
         exclude = [x for x in one("exclude", "").split(",") if x]
         minutes = int(one("minutes")) if one("minutes") else None
@@ -68,6 +69,8 @@ def api_get(path: str, q: dict, conn):
         if one("q"):
             return memory.search(one("q"), int(one("limit", 30)), one("domain"), conn)
         return memory.timeline(int(one("days", 30)), conn)
+    if path == "/api/ai":
+        return {**daily.status(conn), "improvements": daily.improvements(conn)}
     if path == "/api/reflections":
         return mind.reflections(conn)
     if path == "/api/about":
@@ -97,7 +100,8 @@ def api_get(path: str, q: dict, conn):
         return tasks.list_open(conn, one("domain"), one("project"))
     if path == "/api/meta":
         return {"domains": list(config.domains()), "currency": config.currency(),
-                "llm": __import__("lifeos.llm", fromlist=["available"]).available()}
+                "llm": __import__("lifeos.llm", fromlist=["available"]).available(),
+                "ai_mode": __import__("lifeos.llm", fromlist=["backend"]).backend(slow_ok=True) or "daily"}
     return None
 
 
@@ -143,6 +147,9 @@ def api_post(path: str, body: dict, conn):
         return shi.fetch(conn)
     if parts[:2] == ["api", "trends"] and len(parts) == 4 and parts[3] in ("retire", "keep"):
         (shi.retire if parts[3] == "retire" else shi.keep)(conn, int(parts[2]))
+        return {"ok": True}
+    if parts[:2] == ["api", "improvements"] and len(parts) == 4:
+        daily.mark_improvement(conn, int(parts[2]), parts[3])
         return {"ok": True}
     if path == "/api/now/skip":
         return now.skip(conn, int(body["task_id"]))
@@ -397,4 +404,31 @@ def serve(host: str = "127.0.0.1", port: int = 8765, token: str | None = None) -
     conn.close()
     if host in ("127.0.0.1", "localhost"):
         print(f"🌐 LifeOS 仪表盘：http://{host}:{port}/    器材橱窗：http://{host}:{port}/shop")
+    if os.environ.get("LIFEOS_AUTORELOAD"):
+        _watch_for_updates()
     ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+
+def _code_stamp() -> float:
+    root = Path(__file__).parent
+    return max(p.stat().st_mtime for p in [*root.glob("*.py"), *root.glob("static/*")] if p.is_file())
+
+
+def _watch_for_updates(every: int = 300) -> None:
+    """在后台服务（launchd）里运行时：git pull 拿到新代码后，自己安静地退出，由 launchd 用新代码重启。"""
+    import threading
+    import time
+
+    start = _code_stamp()
+
+    def loop():
+        while True:
+            time.sleep(every)
+            try:
+                if _code_stamp() > start:
+                    print("🔄 发现新版本，重启以加载…", flush=True)
+                    os._exit(0)
+            except OSError:
+                pass
+
+    threading.Thread(target=loop, daemon=True).start()

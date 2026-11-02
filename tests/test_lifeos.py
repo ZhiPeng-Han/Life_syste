@@ -282,7 +282,7 @@ class FamilyTest(unittest.TestCase):
         sunday = date(2026, 11, 1)
         r = next(x for x in family.rituals(conn, sunday) if x["name"] == "周日一起做饭")
         self.assertTrue(r["gentle"] and r["today"])
-        family.log_ritual(conn, r["id"], "做了番茄牛腩")
+        family.log_ritual(conn, r["id"], "做了番茄牛腩", on=sunday)
         r = next(x for x in family.rituals(conn, sunday) if x["name"] == "周日一起做饭")
         self.assertFalse(r["gentle"])
         self.assertNotIn("streak", r)
@@ -546,6 +546,115 @@ class MindTest(unittest.TestCase):
         conn.execute("INSERT INTO memory_entities SELECT id, 1 FROM memories WHERE type = 'summary'")
         mind.nightly(conn)
         self.assertTrue(mind.about(conn, "冰岛")["wishes"])
+
+
+class DailyTest(unittest.TestCase):
+    """每日梳理：工作包 → Claude 的结果 → 校验写入 → 可撤销。"""
+
+    def _result(self, conn, **extra):
+        import json as _json
+        from lifeos import daily
+
+        path = daily.ai_dir("outbox") / "test.json"
+        path.write_text(_json.dumps({"date": date.today().isoformat(), **extra}, ensure_ascii=False), encoding="utf-8")
+        return daily.apply(conn, path)
+
+    def test_prepare_writes_package(self):
+        from lifeos import daily
+
+        conn = fresh()
+        memory.capture("昨天和她去看了电影", conn=conn)
+        r = daily.prepare(conn, fetch_news=False)
+        text = open(r["inbox"], encoding="utf-8").read()
+        self.assertIn("昨天和她去看了电影", text)
+        self.assertIn("领域只能用", text)
+        self.assertTrue(os.path.exists(r["schema"]))
+
+    def test_apply_validates_and_undo_restores(self):
+        from lifeos import daily
+
+        conn = fresh()
+        memory.capture("下班路上拍到很好看的夕阳", conn=conn)
+        mid = conn.execute("SELECT MAX(id) FROM memories").fetchone()[0]
+        before = conn.execute("SELECT domain FROM memories WHERE id = ?", (mid,)).fetchone()[0]
+        r = self._result(conn,
+                         news=[{"title": "二手镜头市场回暖", "domain": "器材事业", "direction": 1, "strength": 3, "summary": "好卖"}],
+                         memories=[{"id": mid, "domain": "器材事业", "topics": ["夕阳"]}, {"id": 99999, "domain": "关系"},
+                                   {"id": mid, "domain": "不存在的领域"}],
+                         reflections=[{"content": "有证据的领悟", "evidence": [mid]}, {"content": "没有证据", "evidence": [424242]}],
+                         notes={"morning": "早安", "her": "她", "nope": "x"},
+                         improvements=[{"title": "加拍照关键词", "why": "分错了", "how": "改 keywords", "effort": "小"}])
+        self.assertEqual(conn.execute("SELECT domain FROM memories WHERE id = ?", (mid,)).fetchone()[0], "器材事业")
+        self.assertTrue(any("有证据的领悟" in x["content"] for x in mind_reflections(conn)))
+        self.assertFalse(any("没有证据" in x["content"] for x in mind_reflections(conn)))
+        self.assertEqual(daily.notes(conn)["morning"], "早安")
+        self.assertNotIn("nope", daily.notes(conn))
+        self.assertEqual(len(daily.improvements(conn)), 1)
+        self.assertIn("早安", now.morning(conn))
+        daily.undo(conn, r["run"])
+        self.assertEqual(conn.execute("SELECT domain FROM memories WHERE id = ?", (mid,)).fetchone()[0], before)
+        self.assertEqual(daily.notes(conn), {})
+        self.assertEqual(daily.improvements(conn), [])
+        self.assertFalse(conn.execute("SELECT 1 FROM trends WHERE title = '二手镜头市场回暖'").fetchone())
+
+    def test_cannot_delete_memories_only_confirm(self):
+        conn = fresh()
+        memory.capture("她说想学陶艺", conn=conn)
+        mid = conn.execute("SELECT MAX(id) FROM memories").fetchone()[0]
+        conn.execute("UPDATE memories SET status = 'needs_confirm' WHERE id = ?", (mid,))
+        self._result(conn, confirm=[{"id": mid, "keep": False}])
+        self.assertEqual(conn.execute("SELECT status FROM memories WHERE id = ?", (mid,)).fetchone()[0], "needs_confirm")
+        self._result(conn, confirm=[{"id": mid, "keep": True}])
+        self.assertEqual(conn.execute("SELECT status FROM memories WHERE id = ?", (mid,)).fetchone()[0], "active")
+
+    def test_notes_expire(self):
+        from lifeos import daily
+
+        conn = fresh()
+        self._result(conn, notes={"morning": "早安"})
+        self.assertEqual(daily.notes(conn, date.today() + timedelta(days=3)), {})
+
+    def test_backup(self):
+        from lifeos import daily
+
+        fresh().close()
+        self.assertTrue(daily.backup().exists())
+
+
+def mind_reflections(conn):
+    from lifeos import mind
+
+    return mind.reflections(conn)
+
+
+class ConfigAndModeTest(unittest.TestCase):
+    def test_personal_rules_merge_over_defaults(self):
+        path = os.path.join(os.environ["LIFEOS_HOME"], "rules.toml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('[general]\ncurrency = "¥"\n')
+        try:
+            config.reload()
+            self.assertEqual(config.currency(), "¥")
+            self.assertIn("关系", config.domains())  # 其他默认值仍然在
+        finally:
+            os.remove(path)
+            config.reload()
+
+    def test_ai_modes(self):
+        old = os.environ.pop("LIFEOS_LLM", None)
+        try:
+            os.environ["LIFEOS_AI_MODE"] = "daily"
+            self.assertIsNone(llm.backend(slow_ok=True))
+            os.environ["LIFEOS_AI_MODE"] = "claude-code"
+            import shutil as _sh
+
+            expected = "claude-code" if _sh.which("claude") else None
+            self.assertEqual(llm.backend(slow_ok=True), expected)
+            self.assertIsNone(llm.backend(slow_ok=False))  # 记一句话时不等 Claude Code
+        finally:
+            os.environ.pop("LIFEOS_AI_MODE", None)
+            if old is not None:
+                os.environ["LIFEOS_LLM"] = old
 
 
 if __name__ == "__main__":

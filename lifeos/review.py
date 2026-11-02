@@ -257,7 +257,7 @@ def user_manual(conn, save: bool = True) -> str:
     text = "\n".join(L)
     polished = llm.complete_text(
         "把这份数据整理成一份温和、具体的'用户说明书'，保留所有数字，补充 3 条基于数据的、可执行的自我管理建议。不要编造数据里没有的事实。",
-        text, effort="medium",
+        text, effort="medium", slow_ok=True,
     )
     if polished:
         text += "\n\n## 🤖 AI 解读\n\n" + polished

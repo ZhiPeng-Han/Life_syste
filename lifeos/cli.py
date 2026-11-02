@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date
 
-from . import (__version__, business, cards, config, db, decisions, experiments, family, letter, photos, llm, meals, memory, mind, now,
+from . import (__version__, business, cards, config, db, decisions, daily, experiments, family, letter, photos, llm, meals, memory, mind, now,
                planner, relationship, review, seed, shi, tasks, yi)
 
 
@@ -16,7 +16,7 @@ def out(obj) -> None:
 def cmd_init(a, conn):
     r = seed.run(conn)
     out(f"✅ LifeOS 已初始化：{config.db_path()}\n" + json.dumps(r, ensure_ascii=False))
-    out(f"AI 引擎：{'Claude（' + llm.MODEL + '）' if llm.available() else '规则引擎（设置 ANTHROPIC_API_KEY 后启用 Claude）'}")
+    out(f"AI：{llm.describe()}")
     out("下一步：python -m lifeos today")
 
 
@@ -120,6 +120,35 @@ def cmd_yi(a, conn):
         bar = "━━━━━━━" if v in (7, 9) else "━━━ ━━━"
         out(f"  {bar} {'○' if v == 9 else '×' if v == 6 else ''}")
     _print_reading(r["reading"])
+
+
+def cmd_ai(a, conn):
+    if a.action == "prepare":
+        b = daily.backup()
+        r = daily.prepare(conn, fetch_news=not a.no_news)
+        out(f"💾 已备份：{b}")
+        out(f"📦 工作包：{r['inbox']}\n   新输入 {r['inputs']} 条，新记忆 {r['memories']} 条，新闻标题 {r['headlines']} 条"
+            + ("\n   ✉️ 今天是周日，请写信" if r["write_letter"] else ""))
+        out(f"📐 结果格式：{r['schema']}\n✍️ 结果写到：{r['outbox']}\n然后运行：python3 -m lifeos ai apply {r['outbox']}")
+    elif a.action == "apply":
+        r = daily.apply(conn, a.file)
+        out(f"✅ 第 {r['run']} 次梳理已应用（{r['changes']} 处）\n{r['summary']}\n报告：{r['report']}\n不满意：python3 -m lifeos ai undo")
+    elif a.action == "undo":
+        r = daily.undo(conn, a.id)
+        out(f"↩️ 已撤销第 {r.get('run')} 次梳理的 {r['undone']} 处改动" if r["undone"] else "没有可撤销的梳理。")
+    elif a.action == "improvements":
+        for i in daily.improvements(conn, None if a.all else "open"):
+            out(f"#{i['id']} [{i['status']}] {i['title']}（{i['effort'] or '?'}）\n   为什么：{i['why']}\n   怎么做：{i['how']}")
+    elif a.action == "mark":
+        daily.mark_improvement(conn, a.id, a.status)
+        out("好。")
+    else:
+        s = daily.status(conn)
+        out(json.dumps(s, ensure_ascii=False, indent=2))
+
+
+def cmd_backup(a, conn):
+    out(f"💾 {daily.backup()}")
 
 
 def cmd_mind(a, conn):
@@ -488,6 +517,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--id", type=int)
     s.add_argument("text", nargs="*")
     s.set_defaults(fn=cmd_yi)
+
+    s = sub.add_parser("ai", help="每日梳理（Claude Code 定时任务用）：prepare / apply 文件 / undo / status / improvements / mark")
+    s.add_argument("action", nargs="?", choices=["prepare", "apply", "undo", "status", "improvements", "mark"], default="status")
+    s.add_argument("file", nargs="?")
+    s.add_argument("--id", type=int)
+    s.add_argument("--status", choices=["open", "accepted", "declined", "done"], default="accepted")
+    s.add_argument("--all", action="store_true")
+    s.add_argument("--no-news", action="store_true", help="prepare 时不抓新闻")
+    s.set_defaults(fn=cmd_ai)
+
+    sub.add_parser("backup", help="备份数据库到 data/backups/").set_defaults(fn=cmd_backup)
 
     s = sub.add_parser("mind", help="记忆中枢：list 领悟 / recall 回忆 / about 一件事 / reflect / wrong --id / reindex")
     s.add_argument("action", nargs="?", choices=["list", "recall", "about", "reflect", "wrong", "reindex"], default="list")

@@ -247,7 +247,7 @@ def ai_reflect(conn, r: dict, question: str, context: str) -> str | None:
         f"他问：{question}\n本卦：{p['full']}，《象》曰：{p['xiang']}\n"
         + (f"之卦：{changed['full']}，《象》曰：{changed['xiang']}\n" if changed else "")
         + f"变爻：{'、'.join(r['moving_positions']) or '无'}\n\n他的近况：\n{context}",
-        effort="medium",
+        effort="medium", slow_ok=True,
     )
 
 

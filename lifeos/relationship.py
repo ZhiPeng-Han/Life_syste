@@ -125,6 +125,7 @@ def ai_ideas(conn) -> str | None:
         "准备清单。语气真诚，不要油腻；减肥相关只做支持，绝不评价她的身材；情话和表达留给用户自己。",
         prompt,
         effort="medium",
+        slow_ok=True,
     )
 
 

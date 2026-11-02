@@ -22,15 +22,27 @@ def config_dir() -> Path:
     return Path(os.environ.get("LIFEOS_CONFIG", REPO_ROOT / "config"))
 
 
+def _merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 @lru_cache(maxsize=None)
 def _load(name: str) -> dict:
-    # data/ 下的同名文件优先，方便个人覆盖而不改仓库默认值
-    for base in (home(), config_dir()):
+    """仓库里的默认值（config/）+ 你自己的修改（data/ 下的同名文件，只写想改的部分）。
+
+    个人修改放在 data/ 里，不进 git，所以 git pull 更新系统时永远不会冲突；
+    仓库新增的配置项也会自动生效。列表（如 [[blocks]]）整体以你的为准。
+    """
+    data: dict = {}
+    for base in (config_dir(), home()):
         path = base / name
         if path.exists():
             with open(path, "rb") as f:
-                return tomllib.load(f)
-    return {}
+                data = _merge(data, tomllib.load(f))
+    return data
 
 
 def rules() -> dict:

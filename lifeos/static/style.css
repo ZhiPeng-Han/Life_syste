@@ -168,3 +168,5 @@ svg.hex { width: 140px; flex: none; }
 
 .pocket li .row { flex-wrap: nowrap; flex: none; }
 blockquote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--love); color: var(--muted); }
+.ai-note { background: var(--card); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+.card pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: inherit; }

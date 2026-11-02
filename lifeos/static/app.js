@@ -264,7 +264,10 @@ async function renderHer(el) {
   const [d, f] = await Promise.all([api("/api/her"), api("/api/family")]);
   const statuses = ["想法", "规划中", "进行中", "已实现"];
   const hz = f.horizons;
+  if (!HOME.notes) HOME.notes = (await api("/api/ai")).notes || {};
+  const note = HOME.notes.her;
   el.innerHTML = `
+    ${note ? `<p class="ai-note">❤️ ${esc(note)}</p>` : ""}
     <div class="card star"><div class="small muted">⭐ 我们的北极星</div>
       <div class="star-text">${esc(f.north_star.text) || '<span class="muted">还没写。找一个安静的晚上，和她一起写一句。</span>'}</div>
       <button class="btn sm" onclick="editStar()">${f.north_star.text ? "重写" : "写下"}</button>
@@ -437,6 +440,7 @@ async function renderNow(el) {
   el.innerHTML = `
     <p class="greet">${esc(h.greeting)} ${esc(h.term.name)}时节${h.weather ? ` · ${h.weather.icon} ${esc(h.weather.label)} ${h.weather.tmin}–${h.weather.tmax}°C` : ""}</p>
     <p class="small"><a href="#tianshi">${h.cast ? `☯ ${h.cast.symbol} ${esc(h.cast.full)} · ${esc(h.cast.stance)}` : "☯ 今日还未起卦 →"}</a></p>
+    ${h.notes && h.notes.morning ? `<p class="ai-note">💬 ${esc(h.notes.morning)}</p>` : ""}
     ${horizonStrip(h.horizons)}
     ${h.rituals.map((r) => `<div class="ritual">🕯 ${r.today ? "今天是" : "这一期还没"}「${esc(r.name)}」
       <button class="btn sm" onclick="logRitual(${r.id})">做了</button></div>`).join("")}
@@ -630,7 +634,22 @@ async function renderLetter(el) {
 
 // ------------------------------------------------------------------ 更多
 async function renderMore(el) {
+  const ai = await api("/api/ai");
+  const last = ai.last;
+  const imps = ai.improvements || [];
   el.innerHTML = `
+    <div class="card">
+      <div class="small muted">🌙 每日梳理（你电脑上的 Claude Code 定时任务）</div>
+      ${last ? `<p>${esc(last.day)} · ${last.status === "applied" ? "已完成" : last.status === "undone" ? "已撤销" : "未完成"}</p>
+        <details><summary class="small muted">这次改了什么</summary><pre class="small">${esc(last.summary || "")}</pre></details>`
+        : `<p class="muted small">还没有运行过。设置方法见 docs/本地部署与每日梳理.md</p>`}
+    </div>
+    ${imps.length ? `<h2>🛠 系统提升建议</h2>${imps.map((i) => `<div class="card"><b>${esc(i.title)}</b>
+      ${i.effort ? `<span class="chip">${esc(i.effort)}</span>` : ""}
+      <p class="small">${esc(i.why || "")}</p>
+      <details><summary class="small muted">怎么做</summary><p class="small">${esc(i.how || "")}</p></details>
+      <div class="row"><button class="btn sm" onclick="markImp(${i.id},'accepted')">想要</button>
+      <button class="btn sm ghost" onclick="markImp(${i.id},'declined')">不用</button></div></div>`).join("")}` : ""}
     <div class="card more">
       <a href="#memory">🧠 记忆 <span class="muted small">它在后台记着、连着；想找什么时再来</span></a>
       <a href="#today">🗓 今天的结构 <span class="muted small">需要的日子再打开</span></a>
@@ -643,6 +662,10 @@ async function renderMore(el) {
     <p class="small muted">这个系统的原则：它替你记住，在你需要时帮你做个小决定；其余时候，它安静。你是生活的主体。</p>`;
 }
 
+async function markImp(id, status) {
+  await api(`/api/improvements/${id}/${status}`, {});
+  render("more");
+}
 
 // ------------------------------------------------------------------ 天时
 function hexSvg(lines, upto = 6) {
@@ -690,11 +713,13 @@ async function revealCast(el, r) {
 
 async function renderTianshi(el) {
   const d = await api("/api/tianshi");
+  if (!HOME.notes) HOME.notes = (await api("/api/ai")).notes || {};
   const dir = { 1: "顺", "-1": "逆", 0: "观" };
   const mom = Object.entries(d.momentum).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   el.innerHTML = `
     <p class="greet">🌿 ${esc(d.term.name)}　${esc(d.term.tip)} <span class="small">（距${esc(d.term.next)} ${d.term.days_to_next} 天）</span></p>
     ${d.weather ? `<p class="muted">${d.weather.icon} ${esc(d.weather.city)} ${esc(d.weather.label)} ${d.weather.tmin}–${d.weather.tmax}°C</p>` : ""}
+    ${HOME.notes.shi ? `<p class="ai-note">🧭 ${esc(HOME.notes.shi)}</p>` : ""}
     <h2>☯ 今日之卦</h2>
     <div class="card" id="day-cast">${d.today ? readingHtml(d.today) : `
       <p>心里想着今天，静一静，然后起一卦。</p>
@@ -809,6 +834,6 @@ $("#capture").onsubmit = async (e) => {
 
 (async () => {
   META = await api("/api/meta");
-  $("#llm").textContent = META.llm ? "Claude" : "规则引擎";
+  $("#llm").textContent = META.llm ? "Claude" : META.ai_mode === "claude-code" ? "Claude Code" : "每日梳理";
   render(location.hash.slice(1) in RENDER ? location.hash.slice(1) : "now");
 })();

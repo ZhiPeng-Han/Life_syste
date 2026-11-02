@@ -1,4 +1,4 @@
-# Life_syste · LifeOS v0.5
+# Life_syste · LifeOS v0.6
 
 一个陪你生活的 AI 系统。它**替你记住**（杂事、她说过的话、发生过的美好），在你**需要时帮你做个小决定**；其余时候，它安静。
 
@@ -6,6 +6,7 @@
 >
 > 天行健，君子以自强不息；地势坤，君子以厚德载物。 → [docs/天行健地势坤.md](docs/天行健地势坤.md)
 
+- 🖥 **本地部署 · GitHub 同步 · 每日 AI 梳理（不用 API）**：[docs/本地部署与每日梳理.md](docs/本地部署与每日梳理.md)
 - 🧠 记忆系统（v0.5 记忆中枢）：[docs/记忆系统.md](docs/记忆系统.md)
 - ☯ 天行健，地势坤（家庭、天道与命）：[docs/天行健地势坤.md](docs/天行健地势坤.md)
 - 🌿 v0.2 设计反思：[docs/主体性-设计反思.md](docs/主体性-设计反思.md)
@@ -78,7 +79,8 @@ card（Part 3 卡片）/ exp（个人实验）/ decide（决策日志）/ review
 ```
 config/rules.toml      你的生活规则（时间块、预算、主线支线、自主等级、捡漏门槛、冰岛基金）← 每周改它
 config/recipes.toml    菜谱库
-lifeos/                代码：memory 记忆 · mind 记忆中枢 · extract 抽取 · planner 规划 · decisions 放权
+scripts/               install-mac.sh 开机自启 · update.sh 更新 · lifeos-daily.md 每日梳理说明（给 Claude Code）
+lifeos/                代码：memory 记忆 · mind 记忆中枢 · daily 每日梳理 · extract 抽取 · planner 规划 · decisions 放权
                        business 器材 · relationship 她 · meals 菜单 · cards Part3 · review 复盘
 data/                  个人数据（SQLite、复盘、说明书），已 .gitignore
 tests/                 python -m unittest discover -s tests

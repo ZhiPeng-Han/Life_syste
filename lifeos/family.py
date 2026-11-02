@@ -110,8 +110,9 @@ def rituals(conn, on: date | None = None) -> list[dict]:
     return out
 
 
-def log_ritual(conn, ritual_id: int, note: str = "") -> None:
-    conn.execute("INSERT INTO ritual_log(ritual_id, day, note) VALUES(?,?,?)", (ritual_id, db.today(), note))
+def log_ritual(conn, ritual_id: int, note: str = "", on: date | None = None) -> None:
+    conn.execute("INSERT INTO ritual_log(ritual_id, day, note) VALUES(?,?,?)",
+                 (ritual_id, (on.isoformat() if on else db.today()), note))
     conn.commit()
     if note.strip():
         name = conn.execute("SELECT name FROM rituals WHERE id = ?", (ritual_id,)).fetchone()[0]

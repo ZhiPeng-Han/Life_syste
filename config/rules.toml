@@ -2,6 +2,12 @@
 # 这份文件就是"不再需要思考的决策"。每次周复盘后，根据系统建议修改这里，并 git commit。
 # 修改历史 = 你的生活方式迭代史。
 
+[ai]
+# auto：设置了 ANTHROPIC_API_KEY 就实时调用 API；没有就只靠每日梳理（默认）
+# daily：不实时调用任何 AI，只靠每天的 Claude Code 定时任务梳理（不需要 API key）
+# claude-code：在你主动点的地方（写信、问卦解读、惊喜方案）调用本机的 claude 命令，用你的 Claude 登录；会慢一些
+mode = "auto"
+
 [general]
 currency = "£"            # 货币符号，按实际修改
 day_start = "07:00"
@@ -321,6 +327,13 @@ domain = "建筑工作"
 [[environment.feeds]]
 url = "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
 domain = "自媒体"
+
+# 天下大事（不归属某个领域，每日梳理时由 Claude 判断和你有没有关系）
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/world/rss.xml"
+
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/uk/rss.xml"
 
 # ---------------------------------------------------------------
 # 记忆中枢：系统一开始就认识的"事物"。之后你提到的地点、器材型号、她的愿望里的事会自动加入。

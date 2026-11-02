@@ -312,6 +312,37 @@ MIGRATIONS = [
     ALTER TABLE memories ADD COLUMN superseded_by INTEGER; -- 被哪条新事实取代
     CREATE INDEX idx_memories_when ON memories(occurred_at);
     """,
+    # v6：每日梳理（Claude Code 定时任务）——每次运行、每一处改动（可撤销）、系统提升建议
+    """
+    CREATE TABLE ai_runs (
+        id INTEGER PRIMARY KEY,
+        day TEXT NOT NULL,
+        at TEXT NOT NULL,
+        source TEXT,
+        summary TEXT,
+        status TEXT DEFAULT 'applied'   -- applying / applied / undone
+    );
+    CREATE TABLE ai_changes (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER REFERENCES ai_runs(id),
+        tbl TEXT NOT NULL,
+        row_id INTEGER,
+        action TEXT NOT NULL,           -- insert / update / meta
+        before TEXT
+    );
+    CREATE TABLE improvements (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER,
+        day TEXT,
+        title TEXT NOT NULL,
+        why TEXT,
+        how TEXT,
+        area TEXT,
+        effort TEXT,
+        status TEXT DEFAULT 'open',     -- open / accepted / declined / done
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

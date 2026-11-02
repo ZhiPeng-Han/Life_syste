@@ -131,7 +131,7 @@ def write(conn, end: date | None = None, save: bool = True) -> dict:
         "你在给一位朋友写每周的信。他是建筑师，在准备 RIBA Part 3，业余买卖相机镜头，很爱他的女朋友。"
         "根据下面的素材，用第二人称、温和克制的中文写一封 300 字以内的信：提到具体的瞬间和她；"
         "肯定他做到的事；如果他累了，允许他休息；不评分、不提效率、不给待办清单；最后原样保留那个问题。",
-        text, effort="medium",
+        text, effort="medium", slow_ok=True,
     )
     if warm:
         text = f"# ✉️ 写给这一周的你（{d['start']} → {d['end']}）\n\n{warm}"

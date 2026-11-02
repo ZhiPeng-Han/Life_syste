@@ -9,7 +9,7 @@
 import random
 from datetime import date, datetime, timedelta
 
-from . import config, db, family, llm, mind, photos, planner, relationship, shi, tasks, yi
+from . import config, daily, db, family, llm, mind, photos, planner, relationship, shi, tasks, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -233,8 +233,11 @@ def morning(conn, on: date | None = None) -> str:
     p = pocket(conn, on)
     term = shi.solar_term(on)
     alm = shi.almanac(on)
+    note = daily.notes(conn, on)
     lines = [f"早安。今天是周{'一二三四五六日'[on.weekday()]}" + (f"，农历{alm['lunar'].split(' ')[-1]}" if alm else "")
              + f"，{term['name']}时节。{term['tip']}"]
+    if note.get("morning"):
+        lines.append(f"💬 {note['morning']}")
     wx = shi.weather(conn, on)
     if wx:
         lines.append(f"{wx['icon']} {wx['city']}{wx['label']}，{wx['tmin']}–{wx['tmax']}°C")
@@ -275,6 +278,10 @@ def morning(conn, on: date | None = None) -> str:
     if top and top[0]["weight"] >= 1:
         t = top[0]
         lines.append(f"🌏 大势：{t['title']}（{'顺' if t['direction'] > 0 else '逆' if t['direction'] < 0 else '观'}）")
+    if note.get("shi"):
+        lines.append(f"🧭 {note['shi']}")
+    if note.get("her"):
+        lines.append(f"❤️ {note['her']}")
     lines.append("需要的时候问我「现在做什么」。什么都不问，也很好。")
     return "\n".join(lines)
 
