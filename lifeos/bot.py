@@ -5,7 +5,7 @@
 3. 先不设 LIFEOS_TELEGRAM_CHAT，运行 python -m lifeos bot，给机器人发一条消息，
    终端会打印你的 chat id；再 export LIFEOS_TELEGRAM_CHAT=那个id 后重启。只有这个 chat 能写入你的数据。
 
-命令：/now 疲惫 此刻给一个可能性  /morning 早安  /yi 今日之卦（/yi 问题 = 问一事）  /shi 本周大势  /junzi 君子卡  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
+命令：/now 此刻宜（可加感受和地点：/now 疲惫 家）  /tian 天时  /morning 早安  /yi 今日之卦（/yi 问题 = 问一事）  /shi 本周大势  /junzi 君子卡  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
 其他任何文字都会被当作"随手记"。
 """
 
@@ -16,7 +16,7 @@ from datetime import datetime
 import urllib.parse
 import urllib.request
 
-from . import business, config, db, decisions, letter, meals, memory, now, planner, relationship, shi, yi
+from . import business, config, db, decisions, letter, meals, memory, now, planner, relationship, shi, tianshi, yi
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -33,11 +33,13 @@ def handle(text: str, conn) -> str:
         return now.morning(conn)
     if text.startswith("/now"):
         parts = text.split()
-        feeling = parts[1] if len(parts) > 1 and parts[1] in now.FEELINGS else None
-        if not feeling:
-            return "你现在感觉怎么样？发：/now " + " / /now ".join(now.FEELINGS)
-        now.log_state(conn, feeling)
-        return now.render_suggestion(now.suggest(conn, feeling, decide=True))
+        feeling = next((p for p in parts[1:] if p in now.FEELINGS), None)
+        place = next((p for p in parts[1:] if p in tianshi.PLACES), None)
+        if feeling:
+            now.log_state(conn, feeling)
+        r = now.right_now(conn, place=place, feeling=feeling)
+        return now.render_right_now(r) + ("" if feeling else "\n\n说说感受会更准：/now " + " / /now ".join(now.FEELINGS)
+                                           + "\n在哪里：/now 家 · 公司 · 外面 · 路上")
     if text.startswith("/yi"):
         q = text[3:].strip()
         if q:
@@ -48,8 +50,16 @@ def handle(text: str, conn) -> str:
             r = yi.cast_today(conn)
         rd = r["reading"]
         z = rd["zhuxi"]
+        st = rd["structure"]
         return "\n".join([f"☯ {rd['title']}", f"《象》曰：{rd['xiang']}", rd["plain"], z["rule"]]
-                         + [m["text"] for m in z["main"]] + [f"姿态：{rd['stance_text']}", rd["note"]])
+                         + [m["text"] for m in z["main"]] + [f"姿态：{rd['stance_text']}", "", f"卦象：{st['summary']}"]
+                         + [f"{ln['name']}：{ln['text']}" for ln in st["lines"]]
+                         + [f"{st['related'][k]['label']} {st['related'][k]['full']}：{st['related'][k]['plain']}" for k in ("hu", "zong")]
+                         + [rd["note"]])
+    if text.startswith("/tian"):
+        t = tianshi.now(conn)
+        sea = t["season"]
+        return f"🧭 {tianshi.line(t)}\n🌗 {sea['hex']['symbol']} {sea['hex']['full']}当令：{sea['text']}"
     if text.startswith("/shi"):
         return shi.digest(conn)
     if text.startswith("/junzi"):

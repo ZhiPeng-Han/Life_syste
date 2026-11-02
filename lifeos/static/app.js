@@ -427,7 +427,7 @@ async function renderSystem(el) {
 
 
 // ------------------------------------------------------------------ 此刻
-const NOW = { feeling: null, minutes: null, seen: [], note: "" };
+const NOW = { feeling: null, minutes: null, seen: [], note: "", place: null, her: null };
 const MINUTES = [[15, "一会儿"], [45, "半小时多"], [120, "一两个小时"], ["", "不确定"]];
 
 let HOME = { skip_reasons: [] };
@@ -444,13 +444,14 @@ async function renderNow(el) {
     ${horizonStrip(h.horizons)}
     ${h.rituals.map((r) => `<div class="ritual">🕯 ${r.today ? "今天是" : "这一期还没"}「${esc(r.name)}」
       <button class="btn sm" onclick="logRitual(${r.id})">做了</button></div>`).join("")}
+    <div id="now-card"><div class="card now rn"><p class="muted small">🧭 看看此刻的天时、地利…</p></div></div>
     <h1 class="ask">你现在感觉怎么样？</h1>
+    <p class="small muted" style="margin-top:-6px">说一下，上面的建议会更懂你。不说也可以。</p>
     <div class="feelings">${Object.entries(h.feelings).map(([f, i]) =>
       `<button class="feel ${NOW.feeling === f ? "on" : ""}" data-f="${f}"><span>${i}</span>${f}</button>`).join("")}</div>
     <div class="row minutes"><span class="muted small">有多少时间？</span>${MINUTES.map(([m, label]) =>
       `<button class="chip-btn ${String(NOW.minutes ?? "") === String(m) ? "on" : ""}" data-m="${m}">${label}</button>`).join("")}</div>
     <input id="now-note" value="${esc(NOW.note)}" placeholder="想说点什么也可以（可不填）">
-    <div id="now-card">${NOW.feeling ? "" : '<p class="muted small" style="margin-top:14px">点一下你的感受，我给你一个可能性。或者，什么都不点。</p>'}</div>
     ${h.echo || h.photos.length ? `<div class="echo">${h.echo ? `✨ ${esc(h.echo)}` : ""}
       ${h.photos.length ? `<div class="photos">${h.photos.map((p) => `<figure><img src="/photo/${p.id}" loading="lazy" alt="">
         <figcaption>${p.years_ago} 年前的今天</figcaption></figure>`).join("")}</div>` : ""}</div>` : ""}
@@ -478,38 +479,55 @@ async function renderNow(el) {
     await api("/api/goodnight", { sleep: Number(b.dataset.sleep) });
     b.parentElement.innerHTML = '<span class="muted small">记下了。</span>';
   }));
-  if (NOW.feeling) ask(false);
+  ask(false);
   const gn = $("#goodnight");
   if (gn) gn.onsubmit = goodnight;
 }
 
-async function ask(log, decide = false) {
-  const q = new URLSearchParams({ feeling: NOW.feeling, exclude: NOW.seen.join(",") });
+async function ask(log) {
+  const q = new URLSearchParams({ exclude: NOW.seen.join(",") });
+  if (NOW.feeling) q.set("feeling", NOW.feeling);
   if (NOW.minutes) q.set("minutes", NOW.minutes);
-  if (log) { q.set("log", "1"); if (NOW.note) q.set("note", NOW.note); }
-  if (decide) q.set("decide", "1");
-  const s = await api("/api/now?" + q);
+  if (NOW.place) q.set("place", NOW.place);
+  if (NOW.her !== null) q.set("her", NOW.her ? "1" : "0");
+  if (log && NOW.feeling) { q.set("log", "1"); if (NOW.note) q.set("note", NOW.note); }
+  const r = await api("/api/right_now?" + q);
   const card = $("#now-card");
-  if (s.kind === "none") {
-    card.innerHTML = `<div class="card now"><div class="sug">🍃 ${esc(s.title)}</div><p class="muted">${esc(s.reason)}</p></div>`;
+  if (!card) return;
+  const t = r.tian, s = r.pick;
+  const places = Object.entries(r.places).map(([k, i]) =>
+    `<button class="chip-btn ${r.place === k ? "on" : ""}" onclick="nowPlace('${k}')">${i} ${k}${r.place === k && r.guessed ? "?" : ""}</button>`).join("");
+  const head = `<div class="rn-head"><span>🧭 此刻宜</span><span class="small muted">${esc(t.time)} ${esc(t.shichen)} · ${esc(t.part)}</span></div>`;
+  const ctl = `<div class="rn-ctl"><div class="row">${places}
+      <button class="chip-btn love ${r.with_her ? "on" : ""}" onclick="nowHer(${!r.with_her})">❤️ 她在身边</button></div>
+    <p class="small muted rn-line">${esc(r.line)}</p></div>`;
+  if (!s) {
+    card.innerHTML = `<div class="card now rn">${head}<div class="sug">🍃 什么都不用做</div>
+      <p class="muted">此刻没有特别适合的事。那就好好待着吧。</p>${ctl}</div>`;
     return;
   }
-  card.innerHTML = `<div class="card now">
-    ${decide ? '<p class="small muted">那就这个吧：</p>' : ""}
-    <div class="sug">${s.kind === "care" ? "🌿" : "🫧"} ${esc(s.title)}</div>
-    <p class="muted">${esc(s.ai || s.reason)}</p>
+  const icon = { task: "🫧", care: "🌿", block: "🌿", moment: "✨" }[s.kind] || "🫧";
+  NOW.cur = s.key;
+  card.innerHTML = `<div class="card now rn">${head}
+    <div class="sug">${icon} ${esc(s.title)}</div>
+    ${s.ai ? `<p class="muted">${esc(s.ai)}</p>` : ""}
+    <dl class="why">${s.why.map((w) => `<dt>${w.k}</dt><dd>${esc(w.t)}</dd>`).join("")}</dl>
     <div class="row">
-      ${s.kind === "task" ? `<button class="btn primary" onclick="nowDone(${s.task_id})">做完了 ✓</button>` : `<button class="btn primary" onclick="nowOk()">好</button>`}
-      <button class="btn" onclick="nowNext('${s.key}')">换一个</button>
-      ${decide ? "" : '<button class="btn" onclick="ask(false, true)">帮我决定</button>'}
-      ${s.kind === "task" ? `<button class="btn" onclick="nowSkip(${s.task_id}, '${s.key}')">现在不想</button>` : ""}
+      ${s.kind === "task" ? `<button class="btn primary" onclick="nowDone(${s.task_id})">做完了 ✓</button>`
+        : s.key === "m:sleep" && $("#goodnight") ? `<button class="btn primary" onclick="$('#goodnight').scrollIntoView({behavior: 'smooth'})">去说晚安 🌙</button>`
+        : `<button class="btn primary" onclick="nowOk()">好</button>`}
+      <button class="btn" onclick="nowNext()">换一个</button>
+      ${s.kind === "task" ? `<button class="btn" onclick="nowSkip(${s.task_id})">现在不想</button>` : ""}
     </div>
-    <p class="small muted" style="margin-top:10px">或者，什么都不做也很好。</p></div>`;
+    ${r.alts.length ? `<p class="small muted" style="margin:10px 0 0">或者：${r.alts.map((a) => esc(a.title)).join(" · ")}</p>` : ""}
+    ${ctl}</div>`;
 }
-function nowNext(key) { NOW.seen.push(key); ask(false); }
-function nowOk() { $("#now-card").innerHTML = '<p class="muted" style="margin-top:14px">去吧。🌿</p>'; }
+function nowPlace(p) { NOW.place = p; NOW.seen = []; ask(false); }
+function nowHer(on) { NOW.her = on; NOW.seen = []; ask(false); }
+function nowNext() { NOW.seen.push(NOW.cur); ask(false); }
+function nowOk() { $("#now-card").innerHTML = '<div class="card now rn"><p class="muted" style="margin:0">去吧。🌿 <a href="#" onclick="event.preventDefault();ask(false)">回来再看</a></p></div>'; }
 async function nowDone(id) { await api(`/api/tasks/${id}/done`, {}); toast("✓ 做完了。"); NOW.seen = []; ask(false); }
-async function nowSkip(id, key) {
+async function nowSkip(id, key = NOW.cur) {
   const r = await api("/api/now/skip", { task_id: id });
   NOW.seen.push(key);
   if (!r.ask_let_go) {
@@ -698,8 +716,42 @@ function readingHtml(r) {
     <p class="small muted">${esc(rd.change)}</p>
     ${rd.trend ? `<p class="small">${esc(rd.trend)}</p>` : ""}
     ${rd.ai ? `<div class="echo">${esc(rd.ai).replace(/\n/g, "<br>")}</div>` : ""}
+    ${rd.structure ? structHtml(rd.structure) : ""}
     <p class="small"><b>自问</b><br>${rd.questions.map(esc).join("<br>")}</p>
     <p class="small muted">${esc(rd.note)}</p>`;
+}
+
+function structHtml(st) {
+  // 卦象解读：内外卦、变爻的处境、互错综、落在各处
+  const rel = ["hu", "zong", "cuo"].map((k) => st.related[k]);
+  return `<details class="struct"><summary>展开卦象解读：内外卦 · 爻位 · 互错综 · 落在各处</summary>
+    <p class="small"><b>内外</b>　${esc(st.summary)}<br><span class="muted">${esc(st.balance)}</span></p>
+    <p class="small"><b>${esc(st.lines_title)}</b></p>
+    ${st.lines.map((l) => `<p class="small" style="margin:4px 0 8px"><b>${esc(l.name)}</b> <span class="muted">${esc(l.position)}</span><br>${esc(l.text)}</p>`).join("")}
+    <p class="small" style="margin-bottom:4px"><b>换三个角度看</b></p>
+    <div class="related">${rel.map((x) => `<div><span class="muted">${esc(x.label)}</span> <b>${x.symbol} ${esc(x.full)}</b>
+      <div class="muted">${esc(x.meaning)}</div><div>${esc(x.same ? "就是本卦自己：从这个角度看都一样" : x.plain)}</div></div>`).join("")}</div>
+    <p class="small" style="margin-bottom:4px"><b>落在各处</b></p>
+    <dl class="areas">${Object.entries(st.areas).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+    <p class="small muted">这些都是从六爻的结构推出来的：内卦是你自己，外卦是你的处境；爻有位置、有呼应。它们给你角度，不给结论。</p>
+  </details>`;
+}
+
+function seasonHtml(t) {
+  const sea = t.season, sn = t.sun;
+  const lines = sea.hex.bits.map((b) => (b ? 7 : 8));
+  return `<div class="card"><div class="season">${hexSvg(lines)}<div style="flex:1;min-width:0">
+      <div class="small muted">时令之卦 · ${esc(sea.month)} · 不是起出来的，是这个季节本来的卦</div>
+      <div class="hex-title">${sea.hex.symbol} ${esc(sea.hex.full)}</div>
+      <p style="margin:4px 0">${esc(sea.text)}</p>
+      <p class="xiang small" style="margin:4px 0">《象》曰：${esc(sea.hex.xiang)}</p>
+      <p class="small muted yy" style="margin:4px 0">阳 ${sea.yang} · 阴 ${6 - sea.yang}　${esc(sea.next_hex.from)}起转为 ${sea.next_hex.symbol} ${esc(sea.next_hex.name)}</p>
+    </div></div>
+    <div class="small" style="margin-top:8px">🌾 ${esc(sea.term)}三候</div>
+    <div class="hou">${sea.hou.all.map((h, i) => `<span class="${i + 1 === sea.hou.n ? "on" : ""}">${i + 1 === sea.hou.n ? "此候 · " : ""}${esc(h)}</span>`).join("")}</div>
+    ${sn ? `<p class="small muted" style="margin:10px 0 0">☀️ 日出 ${sn.rise} · 黄金时刻 ${sn.golden} · 日落 ${sn.set} · 白昼 ${esc(sn.length)}（比昨天${sn.change >= 0 ? "长" : "短"} ${Math.abs(sn.change)} 分钟）</p>` : ""}
+    <p class="small muted" style="margin:6px 0 0">🧭 此刻：${esc(t.time)} ${esc(t.shichen)} · ${esc(t.part)}${t.light ? " · " + esc(t.light) : ""}</p>
+  </div>`;
 }
 
 async function revealCast(el, r) {
@@ -720,6 +772,8 @@ async function renderTianshi(el) {
     <p class="greet">🌿 ${esc(d.term.name)}　${esc(d.term.tip)} <span class="small">（距${esc(d.term.next)} ${d.term.days_to_next} 天）</span></p>
     ${d.weather ? `<p class="muted">${d.weather.icon} ${esc(d.weather.city)} ${esc(d.weather.label)} ${d.weather.tmin}–${d.weather.tmax}°C</p>` : ""}
     ${HOME.notes.shi ? `<p class="ai-note">🧭 ${esc(HOME.notes.shi)}</p>` : ""}
+    <h2>🌗 时令</h2>
+    ${seasonHtml(d.tian)}
     <h2>☯ 今日之卦</h2>
     <div class="card" id="day-cast">${d.today ? readingHtml(d.today) : `
       <p>心里想着今天，静一静，然后起一卦。</p>

@@ -1,4 +1,4 @@
-# Life_syste · LifeOS v0.6
+# Life_syste · LifeOS v0.7
 
 一个陪你生活的 AI 系统。它**替你记住**（杂事、她说过的话、发生过的美好），在你**需要时帮你做个小决定**；其余时候，它安静。
 
@@ -6,6 +6,7 @@
 >
 > 天行健，君子以自强不息；地势坤，君子以厚德载物。 → [docs/天行健地势坤.md](docs/天行健地势坤.md)
 
+- 🧭 **此刻宜：天时 · 地利 · 人和**（时令之卦、七十二候、日出日落、卦象解读）：[docs/天时与此刻宜.md](docs/天时与此刻宜.md)
 - 🖥 **本地部署 · GitHub 同步 · 每日 AI 梳理（不用 API）**：[docs/本地部署与每日梳理.md](docs/本地部署与每日梳理.md)
 - 🧠 记忆系统（v0.5 记忆中枢）：[docs/记忆系统.md](docs/记忆系统.md)
 - ☯ 天行健，地势坤（家庭、天道与命）：[docs/天行健地势坤.md](docs/天行健地势坤.md)
@@ -22,7 +23,8 @@
 
 ```bash
 python -m lifeos init        # 初始化（会写入她的三个愿望和起步任务）
-python -m lifeos now         # 此刻：你现在感觉怎么样？
+python -m lifeos now         # 此刻宜：按天时、地利、人和，此刻去做什么
+python -m lifeos tian        # 天时：时辰、天光、天气、节气与候、时令之卦
 python -m lifeos serve       # 打开 http://127.0.0.1:8765 可视化仪表盘
 ```
 

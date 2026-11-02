@@ -104,16 +104,22 @@ def weather(conn, on: date | None = None) -> dict | None:
     if lat is None or lon is None or os.environ.get("LIFEOS_OFFLINE"):
         return None
     url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-           "&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1")
+           "&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+           "&hourly=temperature_2m,precipitation_probability,weathercode&timezone=auto&forecast_days=1")
     try:
         with urllib.request.urlopen(url, timeout=4) as r:
-            daily = json.loads(r.read())["daily"]
+            data = json.loads(r.read())
+        daily = data["daily"]
         code = int(daily["weathercode"][0])
         label, icon = next((lab, ic) for c, lab, ic in WEATHER_CODES if code <= c)
         w = {"label": label, "icon": icon, "code": code, "city": env.get("city", ""),
              "tmin": round(daily["temperature_2m_min"][0]), "tmax": round(daily["temperature_2m_max"][0]),
              "rain": daily.get("precipitation_probability_max", [None])[0]}
         w["wet"] = code >= 51 or (w["rain"] or 0) >= 60
+        hourly = data.get("hourly") or {}
+        w["hourly"] = {str(int(t[11:13])): {"t": round(tt) if tt is not None else None, "p": p, "c": c}
+                       for t, tt, p, c in zip(hourly.get("time", []), hourly.get("temperature_2m", []),
+                                              hourly.get("precipitation_probability", []), hourly.get("weathercode", []))}
     except (OSError, ValueError, KeyError, StopIteration):
         w = {}
     db.set_meta(conn, key, w)
@@ -240,7 +246,8 @@ TREND_SCHEMA = {
         "type": "object", "additionalProperties": False,
         "required": ["title", "summary", "domain", "direction", "strength", "source_index"],
         "properties": {"title": {"type": "string"}, "summary": {"type": "string"}, "domain": {"type": "string"},
-                       "direction": {"type": "integer"}, "strength": {"type": "integer"}}}}},
+                       "direction": {"type": "integer"}, "strength": {"type": "integer"},
+                       "source_index": {"type": "integer"}}}}},
 }
 
 

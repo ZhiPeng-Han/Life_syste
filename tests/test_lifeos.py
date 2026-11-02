@@ -1,13 +1,17 @@
 import os
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 os.environ["LIFEOS_HOME"] = tempfile.mkdtemp()
 os.environ["LIFEOS_LLM"] = "off"
 os.environ["LIFEOS_OFFLINE"] = "1"
+# 天时（日出日落）按本机时区换算；测试固定用默认配置所在的伦敦时区，在哪台电脑上跑结果都一样
+os.environ["TZ"] = "Europe/London"
+if hasattr(__import__("time"), "tzset"):
+    __import__("time").tzset()
 
-from lifeos import family, letter, llm, now, photos, shi, yi
+from lifeos import family, letter, llm, now, photos, shi, tasks, yi
 from lifeos import config
 from lifeos import business, cards, db, decisions, experiments, extract, meals, memory, planner, relationship, review, seed  # noqa: E402
 
@@ -655,6 +659,135 @@ class ConfigAndModeTest(unittest.TestCase):
             os.environ.pop("LIFEOS_AI_MODE", None)
             if old is not None:
                 os.environ["LIFEOS_LLM"] = old
+
+
+class DueAndGearTest(unittest.TestCase):
+    def test_weekday_due_dates_and_titles(self):
+        mon = date(2026, 11, 2)
+        self.assertEqual(extract._due_of("下周三前交立面图", mon), "2026-11-11")
+        self.assertEqual(extract._due_of("周五寄快递", mon), "2026-11-06")
+        self.assertEqual(extract._due_of("周一开会", date(2026, 11, 4)), "2026-11-09")  # 这周一已经过了
+        self.assertEqual(extract._due_of("这周把报告写完", mon), "2026-11-08")
+        r = extract.extract_rules("下周三前交立面图给甲方")
+        self.assertEqual(r["tasks"][0]["title"], "交立面图给甲方")
+        self.assertEqual(extract.extract_rules("提醒我周五寄快递")["tasks"][0]["title"], "寄快递")
+        self.assertEqual(extract.extract_rules("明天去超市")["tasks"][0]["title"], "去超市")
+
+    def test_camera_model_after_chinese(self):
+        self.assertEqual(extract.extract_rules("想买一台A7M3")["memories"][0]["domain"], "器材事业")
+
+
+class GuaXiangTest(unittest.TestCase):
+    def test_structure_of_feng(self):
+        r = yi.cast([7, 8, 9, 7, 8, 6])  # 雷火丰，三、上爻变
+        st = yi.interpret(r)["structure"]
+        self.assertEqual((st["inner"]["trigram"], st["outer"]["trigram"]), ("离", "震"))
+        self.assertEqual(st["related"]["hu"]["full"], "泽风大过")
+        self.assertEqual(st["related"]["cuo"]["full"], "风水涣")
+        self.assertEqual(st["related"]["zong"]["full"], "火山旅")
+        self.assertEqual([x["name"] for x in st["lines"]], ["九三", "上六"])
+        self.assertTrue(all(x["proper"] and x["echo"] for x in st["lines"]))
+
+    def test_every_hexagram_reads(self):
+        for n in range(1, 65):
+            bits = yi.info(n)["bits"]
+            r = yi.cast([7 if b else 8 for b in bits])
+            st = yi.structure(r)
+            self.assertEqual(st["lines"][0]["name"][-1], "五")  # 六爻皆静看五爻
+            self.assertEqual(len(st["areas"]), 5)
+        self.assertTrue(yi.related(yi.info(1)["bits"])["zong"]["same"])  # 乾的综卦是自己
+
+    def test_line_names(self):
+        self.assertEqual([yi.line_name(i, i % 2 == 0) for i in range(6)], ["初九", "六二", "九三", "六四", "九五", "上六"])
+
+
+class SeasonTest(unittest.TestCase):
+    def test_twelve_sovereign_hexagrams(self):
+        from lifeos import tianshi
+
+        self.assertEqual(tianshi.season(date(2026, 11, 2))["hex"]["name"], "剥")
+        self.assertEqual(tianshi.season(date(2026, 11, 20))["hex"]["name"], "坤")
+        self.assertEqual(tianshi.season(date(2026, 12, 23))["hex"]["name"], "复")
+        self.assertEqual(tianshi.season(date(2026, 2, 10))["hex"]["name"], "泰")
+        self.assertEqual(tianshi.season(date(2026, 6, 1))["hex"]["name"], "乾")
+        s = tianshi.season(date(2026, 11, 2))
+        self.assertEqual(s["hou"]["text"], "蛰虫咸俯")
+        self.assertEqual(s["yang"], 1)
+
+    def test_sun_in_london(self):
+        from lifeos import tianshi
+
+        s = tianshi.sun(date(2026, 11, 2))
+        mins = (s["set"] - s["rise"]).total_seconds() / 60
+        self.assertTrue(570 < mins < 590, mins)  # 约 9 小时 39 分
+        self.assertTrue(s["rise"] < s["golden"] < s["set"] < s["dusk"])
+        self.assertLess(s["change"], 0)  # 秋天白昼在变短
+
+    def test_place_needs(self):
+        from lifeos import tianshi
+
+        self.assertEqual(tianshi.need_of("寄快递", "器材事业"), "out")
+        self.assertEqual(tianshi.need_of("交立面图给甲方", "建筑工作"), "work")
+        self.assertFalse(tianshi.fits("路上", "home"))
+        self.assertTrue(tianshi.fits("家", "camera"))
+
+
+class RightNowTest(unittest.TestCase):
+    def setUp(self):
+        self.conn = fresh()
+        self.conn.execute("DELETE FROM tasks")
+        self.conn.commit()
+
+    def test_late_night_says_sleep(self):
+        r = now.right_now(self.conn, datetime(2026, 11, 2, 23, 40), place="家")
+        self.assertEqual(r["pick"]["key"], "m:sleep")
+        self.assertEqual([w["k"] for w in r["pick"]["why"]], ["天时", "地利", "人和"])
+
+    def test_golden_hour_at_home(self):
+        now.log_state(self.conn, "平静")
+        from lifeos import tianshi
+
+        at = tianshi.sun(date(2026, 11, 7))["set"] - timedelta(minutes=20)  # 不依赖本机时区
+        r = now.right_now(self.conn, at, place="家", feeling="平静")
+        self.assertEqual(r["pick"]["key"], "m:golden")
+        self.assertTrue(r["tian"]["golden"])
+
+    def test_place_filters_and_her(self):
+        tasks.add(self.conn, "打扫厨房", "生活维持", 3, "low", 20)
+        r = now.right_now(self.conn, datetime(2026, 11, 7, 11, 0), place="路上", feeling="平静")
+        self.assertNotIn("打扫厨房", [c["title"] for c in [r["pick"], *r["alts"]] if c])
+        r = now.right_now(self.conn, datetime(2026, 11, 7, 11, 0), place="家", feeling="平静", her=True)
+        titles = [c["title"] for c in [r["pick"], *r["alts"]] if c]
+        self.assertFalse(any("消息" in t for t in titles))
+
+    def test_urgent_task_elsewhere_waits(self):
+        tasks.add(self.conn, "寄快递", "器材事业", 3, "low", 20, due=date(2026, 11, 7).isoformat())
+        r = now.right_now(self.conn, datetime(2026, 11, 7, 11, 0), place="家", feeling="平静")
+        c = next(c for c in [r["pick"], *r["alts"]] if c["title"] == "寄快递")
+        self.assertIn("出门", c["why"][2]["t"])
+
+    def test_rain_keeps_you_in(self):
+        db.set_meta(self.conn, "weather:2026-11-07", {"label": "雨", "icon": "🌧", "code": 63, "city": "伦敦", "tmin": 6,
+                                                       "tmax": 10, "rain": 90, "wet": True,
+                                                       "hourly": {str(h): {"t": 8, "p": 90, "c": 63} for h in range(24)}})
+        r = now.right_now(self.conn, datetime(2026, 11, 7, 11, 0), place="家", feeling="烦躁")
+        titles = [c["title"] for c in [r["pick"], *r["alts"]] if c]
+        self.assertFalse(any("出去走" in t for t in titles))
+
+
+class SelfReviewFixesTest(unittest.TestCase):
+    def test_trend_schema_is_consistent(self):
+        items = shi.TREND_SCHEMA["properties"]["trends"]["items"]
+        self.assertTrue(set(items["required"]) <= set(items["properties"]))
+
+    def test_cli_ask_without_terminal(self):
+        from unittest import mock
+
+        from lifeos import cli
+
+        with mock.patch("sys.stdin") as stdin:
+            stdin.isatty.return_value = False
+            self.assertEqual(cli.ask("> ", "q"), "q")
 
 
 if __name__ == "__main__":

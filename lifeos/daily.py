@@ -145,6 +145,7 @@ def prepare(conn, fetch_news: bool = True) -> dict:
     pkg = {
         "date": today, "since": since, "weekday": "一二三四五六日"[date.today().weekday()],
         "write_letter": date.today().weekday() == 6,
+        "season": _season_line(),
         "domains": list(config.domains()), "topics": [e["name"] for e in mind.dictionary(conn)],
         "inputs": inputs, "memories": mems, "needs_confirm": pending, "facts": facts, "context": context,
         "reflections": [{"id": r["id"], "content": r["content"]} for r in mind.reflections(conn)],
@@ -165,6 +166,14 @@ def prepare(conn, fetch_news: bool = True) -> dict:
     return {"inbox": str(stem.with_suffix(".md")), "outbox": str(ai_dir("outbox") / f"{today}.json"),
             "schema": str(ai_dir() / "schema.json"), "inputs": len(inputs), "memories": len(mems),
             "headlines": len(headlines), "write_letter": pkg["write_letter"]}
+
+
+def _season_line() -> str:
+    from . import tianshi
+
+    sea = tianshi.season()
+    return (f"{sea['term']}·{sea['hou']['text']}；时令之卦 {sea['hex']['name']}（{sea['month']}，"
+            f"{sea['hex']['stance_desc']}）：{sea['text']}")
 
 
 def _brief(p: dict) -> str:
@@ -190,6 +199,8 @@ def _brief(p: dict) -> str:
         L += ["## 她的愿望", ""] + [f"- {w['content']}（{w['status']}，{w['mentioned_at']}）" for w in p["wishes"]] + [""]
     if p["context"]:
         L += ["## 更早的记忆（上下文，可作为领悟的证据）", ""] + [f"- {m['id']} {m['day']} [{m['domain']}] {m['content']}" for m in p["context"]] + [""]
+    if p.get("season"):
+        L += ["## 天时", "", f"- {p['season']}", "- notes.morning / notes.shi 可以自然地借用时令（比如剥卦当令：宜收宜藏），但不要说吉凶", ""]
     L += ["## 现在的天下大势", ""] + ([f"- #{t['id']} {'顺' if t['direction'] > 0 else '逆' if t['direction'] < 0 else '观'}"
                                        f" [{t['domain'] or ''}] {t['title']}（{t['observed_at'][:10]}，当前权重 {t['weight']}）" for t in p["trends"]] or ["- 暂无"]) + [""]
     if p["headlines"]:

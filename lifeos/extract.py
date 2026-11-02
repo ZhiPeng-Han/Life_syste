@@ -120,7 +120,12 @@ def extract(text: str) -> dict:
 PERSON_RE = re.compile(r"(她|女友|女朋友|宝贝)")
 WISH_RE = re.compile(r"(想要|想去|想学|想吃|想买|想做|想和|想一起|想|希望|好想|一直想)")
 TASK_RE = re.compile(r"^(记得|别忘了|提醒我|待办|todo|要去|要做|需要|得去|明天|后天|下周|这周|周[一二三四五六日天])", re.I)
-TASK_PREFIX_RE = re.compile(r"^(记得|别忘了|提醒我|待办|todo|明天|后天|下周|这周|今天|今晚)?(要|得|需要|去)?", re.I)
+TASK_PREFIX_RE = re.compile(
+    r"^(记得|别忘了|提醒我|待办|todo)?\s*"
+    r"(明天|后天|今天|今晚|(?:下下?|这|本)?(?:周|星期|礼拜)[一二三四五六日天]?(?:之?前|以前)?|下周|这周|本周|\d{1,2}月\d{1,2}[日号](?:之?前)?)?\s*"
+    r"(要|得|需要)?",
+    re.I,
+)
 BUY_RE = re.compile(r"(收了|收到|买了|入了|拿下|收)")
 SELL_RE = re.compile(r"(出了|卖了|售出|成交|出掉)")
 MODEL_RE = re.compile(
@@ -132,7 +137,7 @@ PRICE_RE = re.compile(r"(?<![\d./])(\d{2,6}(?:\.\d{1,2})?)(?![\d./]|mm)")
 PLATFORMS = ["闲鱼", "eBay", "ebay", "MPB", "mpb", "小红书", "转转", "Facebook", "Gumtree"]
 PAST_RE = re.compile(r"[了过](?![解])|刚才|刚刚")
 REMIND_RE = re.compile(r"^(记得|别忘了|提醒我|待办|todo)", re.I)
-GEAR_RE = re.compile(r"\d{2,3}\s?mm|\d{2,3}\s?/\s?\d(?:\.\d)?\b|\b[A-Z]{1,3}\d{1,2}[A-Z]{0,2}\d?\b|镜头|机身")
+GEAR_RE = re.compile(r"\d{2,3}\s?mm|\d{2,3}\s?/\s?\d(?:\.\d)?(?![\d.])|(?<![A-Za-z0-9])[A-Z]{1,3}\d{1,2}[A-Z]{0,2}\d?(?![A-Za-z0-9])|镜头|机身|相机")
 FACT_RE = re.compile(r"(喜欢|不喜欢|讨厌|爱吃|不吃|过敏|习惯|总是|从不|最爱|不爱|不再|开始喜欢|怕)")
 EVENT_RE = re.compile(r"(今天|昨天|前天|今晚|昨晚|刚才|刚刚|上周|那天|这次)")
 TRAVEL_WORDS = ["去", "旅行", "旅游", "玩", "看极光", "冰岛", "海边"]
@@ -169,8 +174,29 @@ def _segments(text: str) -> list[str]:
     return segs
 
 
-def _due_of(seg: str) -> str:
-    today = date.today()
+WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+WEEKDAY_RE = re.compile(r"(下下|下|这|本)?(?:周|星期|礼拜)([一二三四五六日天])")
+
+
+def _due_of(seg: str, today: date | None = None) -> str:
+    today = today or date.today()
+    m = WEEKDAY_RE.search(seg)
+    if m:
+        # "周五" = 这周的周五（已经过了就是下周）；"下周三" = 下一周的周三；"下下周" 再往后一周
+        target = WEEKDAY[m.group(2)]
+        monday = today - timedelta(days=today.weekday())
+        weeks = {"下下": 2, "下": 1}.get(m.group(1) or "", 0)
+        d = monday + timedelta(weeks=weeks, days=target)
+        if not m.group(1) and d < today:
+            d += timedelta(weeks=1)
+        return d.isoformat()
+    m = re.search(r"(\d{1,3})\s?天(?:之?内|后)", seg)
+    if m:
+        return (today + timedelta(days=int(m.group(1)))).isoformat()
+    if re.search(r"(这|本)周(?:之?内|前)?(?![一二三四五六日天])", seg):
+        return (today + timedelta(days=6 - today.weekday())).isoformat()
+    if re.search(r"下周(?![一二三四五六日天])", seg):
+        return (today + timedelta(days=13 - today.weekday())).isoformat()
     if "明天" in seg:
         return (today + timedelta(days=1)).isoformat()
     if "后天" in seg:

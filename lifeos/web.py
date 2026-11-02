@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import (business, config, daily, db, decisions, family, letter, meals, memory, mind, now, photos, planner, relationship, review,
-               shi, tasks, yi)
+               shi, tasks, tianshi, yi)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -38,12 +38,24 @@ def api_get(path: str, q: dict, conn):
                 "horizons": family.horizons(conn), "rituals": [r for r in family.rituals(conn) if r["gentle"]],
                 "photos": photos.on_this_day(conn), "skip_reasons": list(now.SKIP_REASONS),
                 "notes": daily.notes(conn)}
+    if path == "/api/right_now":
+        her = {"1": True, "0": False}.get(one("her", ""))
+        minutes = int(one("minutes")) if one("minutes") else None
+        if one("log") and one("feeling"):
+            now.log_state(conn, one("feeling"), minutes, one("note"))
+        at = datetime.fromisoformat(one("at")) if one("at") else None  # 预览别的时刻：?at=2026-11-02T15:50
+        r = now.right_now(conn, at=at, place=one("place") or None, feeling=one("feeling") or None, her=her,
+                          exclude=[x for x in one("exclude", "").split(",") if x], minutes=minutes)
+        if one("note") and r["pick"]:
+            r["pick"]["ai"] = now.ai_note(conn, one("feeling") or "平静", one("note"), r["pick"])
+        return r
     if path == "/api/now":
         exclude = [x for x in one("exclude", "").split(",") if x]
         minutes = int(one("minutes")) if one("minutes") else None
         if one("log"):
             now.log_state(conn, one("feeling", "平静"), minutes, one("note"))
-        sug = now.suggest(conn, one("feeling", "平静"), minutes, exclude, decide=bool(one("decide")))
+        place = one("place") or tianshi.guess_place(conn, datetime.now())[0]
+        sug = now.suggest(conn, one("feeling", "平静"), minutes, exclude, decide=bool(one("decide")), place=place)
         if one("note"):
             sug["ai"] = now.ai_note(conn, one("feeling"), one("note"), sug)
         return sug
@@ -53,7 +65,7 @@ def api_get(path: str, q: dict, conn):
     if path == "/api/junzi":
         return yi.junzi_card()
     if path == "/api/tianshi":
-        return {"term": shi.solar_term(), "weather": shi.weather(conn), "today": yi.today_cast(conn),
+        return {"term": shi.solar_term(), "weather": shi.weather(conn), "today": yi.today_cast(conn), "tian": tianshi.now(conn),
                 "almanac": shi.almanac(), "stats": yi.stats(conn),
                 "history": yi.history(conn), "trends": shi.trends(conn), "momentum": shi.momentum(conn),
                 "stances": {k: v["desc"] + "：" + v["detail"] for k, v in yi.STANCES.items()}}
@@ -287,11 +299,15 @@ def _yi_text(conn) -> str:
 
 
 def _now_text(conn, q) -> str:
+    if not q.get("feeling", [""])[0].strip():
+        # Siri 不带感受时：直接给"此刻宜"
+        return now.render_right_now(now.right_now(conn, place=q.get("place", [""])[0] or None))
     feeling = q.get("feeling", ["平静"])[0].strip() or "平静"
     minutes = q.get("minutes", [""])[0]
     minutes = int(minutes) if minutes.strip().isdigit() else None
     now.log_state(conn, feeling, minutes)
-    return now.render_suggestion(now.suggest(conn, feeling, minutes, decide=True))
+    place = q.get("place", [""])[0] or tianshi.guess_place(conn, datetime.now())[0]
+    return now.render_suggestion(now.suggest(conn, feeling, minutes, decide=True, place=place))
 
 
 def _capture_text(conn, text: str) -> str:
@@ -308,6 +324,7 @@ TEXT_ROUTES = {
     "/api/junzi": lambda conn, q, body: (lambda c: f"{c['symbol']} {c['image']}\n{c['act']}\n——{c['plain']}")(yi.junzi_card()),
     "/api/shi": lambda conn, q, body: shi.digest(conn),
     "/api/now": lambda conn, q, body: _now_text(conn, q),
+    "/api/right_now": lambda conn, q, body: now.render_right_now(now.right_now(conn, place=q.get("place", [""])[0] or None)),
     "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
         f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),
 }
@@ -411,7 +428,8 @@ def serve(host: str = "127.0.0.1", port: int = 8765, token: str | None = None) -
 
 def _code_stamp() -> float:
     root = Path(__file__).parent
-    return max(p.stat().st_mtime for p in [*root.glob("*.py"), *root.glob("static/*")] if p.is_file())
+    files = [*root.glob("*.py"), *root.glob("static/*"), *root.glob("texts/*"), *config.config_dir().glob("*.toml")]
+    return max(p.stat().st_mtime for p in files if p.is_file())
 
 
 def _watch_for_updates(every: int = 300) -> None:

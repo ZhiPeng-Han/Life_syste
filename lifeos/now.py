@@ -7,9 +7,10 @@
 """
 
 import random
+import re
 from datetime import date, datetime, timedelta
 
-from . import config, daily, db, family, llm, mind, photos, planner, relationship, shi, tasks, yi
+from . import config, daily, db, family, llm, mind, photos, planner, relationship, shi, tasks, tianshi, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -66,7 +67,9 @@ def _tian_note(stance: str | None, mom: dict, domain: str | None, f: float) -> s
     return f"（{'；'.join(notes)}）" if notes else ""
 
 
-def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | None = None) -> list[dict]:
+def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | None = None,
+               place: str | None = None) -> list[dict]:
+    """place：地利——你此刻在哪里。给了就只留在那里做得了的事（有期限的事除外）。"""
     f = FEELINGS.get(feeling, FEELINGS["平静"])
     at = at or datetime.now()
     today = at.date()
@@ -83,6 +86,9 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
             continue
         if feeling in ("低落", "疲惫") and t["domain"] in HEAVY_WHEN_LOW and not urgent:
             continue
+        need = tianshi.need_of(t["title"], t["domain"])
+        if not tianshi.fits(place, need) and not urgent:
+            continue
         score = planner.task_score(t, today, planner.slot_energy(at.hour * 60 + at.minute))
         if urgent:
             score *= 3
@@ -95,8 +101,10 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
         note = "" if urgent else _tian_note(stance, ctx["mom"], t["domain"], tian)
         # 记忆的影响：最近常想起的事、她的愿望、和她之间的安静、常和累的日子一起出现的事
         mf, mnote = (1.0, "") if urgent else mind.nudge(pulse, t["title"], t["domain"], feeling)
-        out.append({"kind": "task", "task_id": t["id"], "title": t["title"], "domain": t["domain"],
-                    "minutes": t["est_minutes"] or 30, "score": score * tian * mf,
+        out.append({"kind": "task", "task_id": t["id"], "title": t["title"], "domain": t["domain"], "energy": t["energy"],
+                    "minutes": t["est_minutes"] or 30, "score": score * tian * mf, "need": need, "urgent": urgent,
+                    "due_in": (date.fromisoformat(t["due"]) - today).days if t["due"] else None,
+                    "tian_note": note.strip("（）"), "mind_note": mnote, "skips": t["skips"] or 0,
                     "reason": _task_reason(t, feeling, today) + note + (f"（{mnote}）" if mnote else "")})
     for i, o in enumerate(config.rules().get("now_options", [])):
         if feeling not in o.get("feelings", []):
@@ -108,18 +116,160 @@ def candidates(conn, feeling: str, minutes: int | None = None, at: datetime | No
             continue
         if o.get("outdoor") and wx and wx.get("wet"):
             continue  # 外面在下雨
+        need = o.get("need") or ("leave" if o.get("outdoor") else tianshi.need_of(o["title"], None))
+        if not tianshi.fits(place, need):
+            continue
         tian = yi.factor(stance, None, kind="care")
-        out.append({"kind": "care", "option_id": i, "title": o["title"], "domain": "此刻",
+        out.append({"kind": "care", "option_id": i, "title": o["title"], "domain": "此刻", "need": need,
                     "minutes": o.get("minutes", 0), "score": 4.0 * f["care"] * tian,
+                    "tian_note": _tian_note(stance, {}, None, tian).strip("（）"),
                     "reason": f"{f['say']}。这不是任务，是照顾一下自己。" + _tian_note(stance, {}, None, tian)})
     return sorted(out, key=lambda c: -c["score"])
 
 
+# ------------------------------------------------------------------ 此刻宜：天时、地利、人和
+
+OUTSIDE = {"leave", "out", "camera"}
+
+
+def _last_feeling(conn, at: datetime) -> str | None:
+    row = conn.execute("SELECT feeling, at FROM states ORDER BY id DESC LIMIT 1").fetchone()
+    if row and row[0] in FEELINGS and row[1] >= (at - timedelta(hours=4)).isoformat(timespec="seconds"):
+        return row[0]
+    return None
+
+
+def _active_block(at: datetime) -> dict | None:
+    m = at.hour * 60 + at.minute
+    return next((b for b in planner.blocks_for(at.date()) if b["start"] <= m < b["end"]), None)
+
+
+def right_now(conn, at: datetime | None = None, place: str | None = None, feeling: str | None = None,
+              her: bool | None = None, exclude: list[str] | None = None, minutes: int | None = None) -> dict:
+    """不用先回答任何问题：根据天时（时辰、天光、天气、时令之卦、今日之卦、节律）、
+    地利（你在哪里、这件事要在哪里做）、人和（你最近的感受、她在不在身边）推荐此刻去做什么。"""
+    at = at or datetime.now()
+    t = tianshi.now(conn, at)
+    if place:
+        tianshi.set_place(conn, place)
+        guessed = False
+    else:
+        place, guessed = tianshi.guess_place(conn, at)
+    if her is not None:
+        tianshi.set_with_her(conn, her)
+    else:
+        her = tianshi.with_her(conn, at)
+    known = feeling or _last_feeling(conn, at)
+    feel = known or "平静"
+    season_stance = t["season"]["hex"]["stance"]
+    block = _active_block(at)
+    wx = t["weather"] or {}
+    cands = candidates(conn, feel, minutes, at, place)
+
+    # 天时本身给出的可能性
+    late = t["part"] == "深夜" or at.hour >= 23
+    if late:
+        cands.append({"kind": "moment", "key": "m:sleep", "title": "收一收，说晚安，去睡吧", "domain": "此刻", "need": "any",
+                      "minutes": 15, "score": 50.0, "tian_note": f"已经{t['shichen']}了", "reason": "夜深了。明天的事，明天的你会做。"})
+    if block and not late:
+        kind_title = {"关系": "放下手机，好好和她在一起", "建筑工作": "专心做手上的项目，别的先放一放"}.get(
+            block["domain"] or "", "就做这件事，别的先放一放")
+        cands.append({"kind": "block", "key": f"b:{block['title']}", "title": f"{block['title']}：{kind_title}",
+                      "domain": block["domain"], "need": "any", "minutes": block["end"] - at.hour * 60 - at.minute,
+                      "score": 6.0 if block["kind"] == "fixed" else 24.0 if block["domain"] == "关系" else 8.0,
+                      "tian_note": f"现在是你给自己定下的「{block['title']}」的时间（到 {planner._fmt(block['end'])}）",
+                      "reason": "这是你自己定下的节律，不是系统安排的。想换也可以。"})
+    if t["golden"] and not wx.get("wet_now") and place in ("家", "外面") and feel in ("平静", "充沛", "低落"):
+        cands.append({"kind": "moment", "key": "m:golden", "title": "带上相机出去，拍 20 分钟黄金时刻的光", "domain": "此刻",
+                      "need": "camera", "minutes": 20, "score": 13.0,
+                      "tian_note": t["light"], "reason": "一天里光最好的时候就这一会儿，错过就要等明天。"})
+
+    out = []
+    for c in cands:
+        key = c.get("key") or _key(c)
+        if key in set(exclude or []):
+            continue
+        need = c.get("need", "any")
+        score = c["score"]
+        tian = [c["tian_note"]] if c.get("tian_note") else []
+        ren = []
+        if not tianshi.fits(place, need):
+            # 只有有期限的事会走到这里：它仍然在，但等你到了合适的地方再做
+            score *= 0.35
+            ren.append(f"等你{'出门' if need in OUTSIDE else '回到家' if need == 'home' else '坐到电脑前'}时再做")
+        if c.get("urgent") and c.get("due_in", 0) >= 1:
+            score *= 0.6  # 明天才到期：今天做完更安心，但不必压过此刻难得的事
+        if block and block["kind"] == "fixed" and c["kind"] == "task" and c.get("domain") != block["domain"] and not c.get("urgent"):
+            score *= 0.5
+        if c["kind"] in ("task", "care") and not c.get("urgent"):
+            # 时令之卦：一年里阴阳消长的大节奏，影响只有今日之卦的一半
+            sf = 1 + 0.5 * (yi.factor(season_stance, c.get("domain"), c.get("energy"),
+                                      "care" if c["kind"] == "care" else "task") - 1)
+            score *= sf
+            if abs(sf - 1) >= 0.05:
+                tian.append(f"{t['season']['hex']['name']}卦当令，{t['season']['hex']['stance_desc']}")
+            if block and c.get("domain") == block["domain"]:
+                score *= 1.8
+                tian.append(f"正是「{block['title']}」的时间")
+            if late and c["kind"] == "task":
+                score *= 0.2
+        if need in OUTSIDE and c["kind"] != "moment":
+            if wx.get("wet_now"):
+                if need != "out":
+                    continue
+                score *= 0.6
+                tian.append("外面在下雨")
+            elif not t["daylight"]:
+                score *= 0.6 if need == "out" else 0.5
+                tian.append("天已经黑了")
+            elif wx.get("dry_soon") or not wx:
+                score *= 1.3
+                tian.append("天亮着" + ("，接下来两小时不下雨" if wx else ""))
+        if her:
+            if re.search(r"发.{0,3}消息|打电话|视频", c["title"]):
+                continue  # 她就在身边
+            if c.get("domain") == "关系" or "她" in c["title"]:
+                score *= 1.6
+                ren.append("她就在身边")
+            elif c["kind"] == "task" and not c.get("urgent"):
+                score *= 0.6
+        if known:
+            ren.append(FEELINGS[known]["say"])
+        if c.get("mind_note"):
+            ren.append(c["mind_note"])
+        if c.get("urgent"):
+            ren.append("它有期限")
+        dili = f"你在{place}" + ("（猜的）" if guessed else "") + f"，这件事{tianshi.NEED_LABEL.get(need, '哪里都能做')}"
+        out.append({**c, "key": key, "score": round(score, 3),
+                    "why": [{"k": "天时", "t": "；".join(dict.fromkeys(x for x in tian if x)) or "此时无妨"},
+                            {"k": "地利", "t": dili},
+                            {"k": "人和", "t": "；".join(ren) or "还不知道你现在感觉怎样，点一下下面的感受会更准"}]})
+    out.sort(key=lambda c: -c["score"])
+    seen_titles: set = set()
+    out = [c for c in out if not (c["title"] in seen_titles or seen_titles.add(c["title"]))]
+    return {"tian": t, "line": tianshi.line(t), "place": place, "guessed": guessed,
+            "places": {k: v["icon"] for k, v in tianshi.PLACES.items()}, "feeling": known, "with_her": her,
+            "block": block["title"] if block else None,
+            "pick": out[0] if out else None, "alts": out[1:3]}
+
+
+def render_right_now(r: dict) -> str:
+    lines = [f"🧭 此刻 · {r['line']}"]
+    p = r["pick"]
+    if not p:
+        return "\n".join(lines + ["🍃 什么都不用做。好好待着。"])
+    lines.append(f"此刻宜：{p['title']}")
+    lines += [f"  {w['k']}：{w['t']}" for w in p["why"]]
+    if r["alts"]:
+        lines.append("或者：" + "；".join(a["title"] for a in r["alts"]))
+    return "\n".join(lines)
+
+
 def suggest(conn, feeling: str, minutes: int | None = None, exclude: list[str] | None = None,
-            decide: bool = False, at: datetime | None = None) -> dict:
+            decide: bool = False, at: datetime | None = None, place: str | None = None) -> dict:
     """给一个可能性。decide=True 表示"帮我决定"：直接选分数最高的，不再随机。"""
     exclude = set(exclude or [])
-    cands = [c for c in candidates(conn, feeling, minutes, at) if _key(c) not in exclude]
+    cands = [c for c in candidates(conn, feeling, minutes, at, place) if _key(c) not in exclude]
     if not cands:
         return {"kind": "none", "title": "什么都不用做", "reason": "口袋里没有适合此刻的事。那就好好待着吧。", "key": "none"}
     if decide:
@@ -134,6 +284,8 @@ def suggest(conn, feeling: str, minutes: int | None = None, exclude: list[str] |
 
 
 def _key(c: dict) -> str:
+    if c.get("key"):
+        return c["key"]
     return f"t{c['task_id']}" if c["kind"] == "task" else f"o{c['option_id']}"
 
 
@@ -238,9 +390,16 @@ def morning(conn, on: date | None = None) -> str:
              + f"，{term['name']}时节。{term['tip']}"]
     if note.get("morning"):
         lines.append(f"💬 {note['morning']}")
+    sea = tianshi.season(on)
+    lines.append(f"🌗 {sea['hex']['symbol']} {sea['hex']['name']}卦当令（{sea['month']}）：{sea['text']}"
+                 f"　{sea['term']}{['初', '二', '三'][sea['hou']['n'] - 1]}候：{sea['hou']['text']}")
     wx = shi.weather(conn, on)
-    if wx:
-        lines.append(f"{wx['icon']} {wx['city']}{wx['label']}，{wx['tmin']}–{wx['tmax']}°C")
+    sn = tianshi.sun(on)
+    if wx or sn:
+        parts = [f"{wx['city']}{wx['label']}，{wx['tmin']}–{wx['tmax']}°C"] if wx else []
+        if sn:
+            parts.append(f"日出 {sn['rise']:%H:%M}，日落 {sn['set']:%H:%M}，黄金时刻 {sn['golden']:%H:%M} 起")
+        lines.append(f"{wx['icon'] if wx else '☀️'} " + "；".join(parts))
     tc = yi.today_cast(conn, on.isoformat())
     if tc:
         p0 = tc["primary"]
@@ -282,7 +441,7 @@ def morning(conn, on: date | None = None) -> str:
         lines.append(f"🧭 {note['shi']}")
     if note.get("her"):
         lines.append(f"❤️ {note['her']}")
-    lines.append("需要的时候问我「现在做什么」。什么都不问，也很好。")
+    lines.append("需要的时候问我「此刻宜」。什么都不问，也很好。")
     return "\n".join(lines)
 
 

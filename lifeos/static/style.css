@@ -170,3 +170,28 @@ svg.hex { width: 140px; flex: none; }
 blockquote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--love); color: var(--muted); }
 .ai-note { background: var(--card); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
 .card pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-family: inherit; }
+
+/* 此刻宜：天时 · 地利 · 人和 */
+.rn .rn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; font-weight: 600; }
+.rn dl.why { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0 12px; font-size: 13px; }
+.rn dl.why dt { color: var(--accent); font-weight: 600; }
+.rn dl.why dd { margin: 0; color: var(--muted); }
+.rn .rn-ctl { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
+.rn .rn-ctl .chip-btn { font-size: 13px; padding: 3px 10px; }
+.rn .rn-line { margin: 8px 0 0; }
+.chip-btn.love.on { background: var(--love); border-color: var(--love); color: #fff; }
+/* 天时页：时令之卦、卦象解读 */
+.season { display: flex; gap: 14px; align-items: flex-start; }
+.season svg.hex { width: 84px; }
+.season .yy { font-variant-numeric: tabular-nums; }
+.hou { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.hou span { font-size: 13px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.hou span.on { color: var(--fg); border-color: var(--accent); }
+details.struct { margin: 10px 0; }
+details.struct summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+.related { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
+.related div { background: var(--task); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.related b { font-size: 15px; }
+.areas { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 13px; margin: 6px 0; }
+.areas dt { color: var(--muted); }
+.areas dd { margin: 0; }

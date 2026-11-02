@@ -6,11 +6,21 @@ import sys
 from datetime import date
 
 from . import (__version__, business, cards, config, db, decisions, daily, experiments, family, letter, photos, llm, meals, memory, mind, now,
-               planner, relationship, review, seed, shi, tasks, yi)
+               planner, relationship, review, seed, shi, tasks, tianshi, yi)
 
 
 def out(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2) if not isinstance(obj, str) else obj)
+
+
+def ask(prompt: str, default: str = "") -> str:
+    """交互式提问；在定时任务、管道里（没有终端）直接用默认值，而不是报错。"""
+    if not sys.stdin.isatty():
+        return default
+    try:
+        return input(prompt)
+    except EOFError:
+        return default
 
 
 def cmd_init(a, conn):
@@ -28,18 +38,23 @@ def cmd_add(a, conn):
 def cmd_now(a, conn):
     feeling = a.feeling
     if not feeling:
+        # 不用先回答问题：先按天时、地利、人和给一个"此刻宜"
+        her = True if a.her else None
+        out(now.render_right_now(now.right_now(conn, place=a.place, her=her)))
         opts = list(now.FEELINGS)
-        print("你现在感觉怎么样？ " + "  ".join(f"{i + 1}.{now.FEELINGS[f]['icon']}{f}" for i, f in enumerate(opts)))
-        ans = input("> ").strip()
+        ans = ask("\n想说说现在的感受吗？ " + "  ".join(f"{i + 1}.{now.FEELINGS[f]['icon']}{f}" for i, f in enumerate(opts))
+                  + "（回车跳过）> ").strip()
+        if not ans:
+            return
         feeling = opts[int(ans) - 1] if ans.isdigit() and 0 < int(ans) <= len(opts) else (ans if ans in opts else "平静")
     now.log_state(conn, feeling, a.minutes)
     seen = []
     while True:
-        sug = now.suggest(conn, feeling, a.minutes, seen, decide=a.decide)
+        sug = now.suggest(conn, feeling, a.minutes, seen, decide=a.decide, place=a.place)
         out("\n" + now.render_suggestion(sug))
         if sug["kind"] == "none":
             return
-        ans = input("\n[回车] 好  [n] 换一个  [d] 做完了  [s] 跳过  [q] 算了 > ").strip().lower()
+        ans = ask("\n[回车] 好  [n] 换一个  [d] 做完了  [s] 跳过  [q] 算了 > ", "q").strip().lower()
         if ans == "n":
             seen.append(sug["key"])
             continue
@@ -48,10 +63,22 @@ def cmd_now(a, conn):
             out("✓ 好的。")
         elif ans == "s" and sug["kind"] == "task":
             r = now.skip(conn, sug["task_id"])
-            if r["ask_let_go"] and input("这件事你跳过好几次了，要放下吗？(y/n) ").strip().lower() == "y":
+            if r["ask_let_go"] and ask("这件事你跳过好几次了，要放下吗？(y/n) ").strip().lower() == "y":
                 now.let_go(conn, sug["task_id"])
                 out("🍃 放下了。")
         return
+
+
+def cmd_tian(a, conn):
+    t = tianshi.now(conn)
+    sea = t["season"]
+    out(f"🧭 {tianshi.line(t)}")
+    out(f"🌗 时令之卦 {sea['hex']['symbol']} {sea['hex']['full']}（{sea['month']}，阳 {sea['yang']} 阴 {6 - sea['yang']}）："
+        f"{sea['text']}\n   《象》曰：{sea['hex']['xiang']}\n   {sea['next_hex']['from']}起转为 {sea['next_hex']['symbol']}{sea['next_hex']['name']}")
+    out(f"🌾 {sea['term']}三候：" + " · ".join(("【" + h + "】") if i + 1 == sea["hou"]["n"] else h for i, h in enumerate(sea["hou"]["all"])))
+    if t["sun"]:
+        sn = t["sun"]
+        out(f"☀️ 日出 {sn['rise']} · 黄金时刻 {sn['golden']} · 日落 {sn['set']} · 白昼 {sn['length']}（比昨天{'长' if sn['change'] >= 0 else '短'} {abs(sn['change'])} 分钟）")
 
 
 def cmd_pocket(a, conn):
@@ -89,6 +116,17 @@ def _print_reading(rd: dict) -> None:
     out(f"\n姿态：{rd['stance_text']}\n{rd['change']}")
     if rd.get("trend"):
         out(rd["trend"])
+    st = rd.get("structure")
+    if st:
+        out(f"\n卦象：{st['summary']}{st['balance']}")
+        out(f"{st['lines_title']}：")
+        for ln in st["lines"]:
+            out(f"  {ln['name']}　{ln['text']}")
+        out("看看另外三面：")
+        for k in ("hu", "zong", "cuo"):
+            x = st["related"][k]
+            out(f"  {x['label']} {x['symbol']}{x['full']}（{x['meaning']}）：" + ("就是本卦自己——从这个角度看都一样" if x["same"] else x["plain"]))
+        out("落在各处：" + "；".join(f"{k}：{v}" for k, v in st["areas"].items()))
     if rd.get("ai"):
         out("\n" + rd["ai"])
     out("\n自问：\n" + "\n".join(f"  · {q}" for q in rd["questions"]) + f"\n\n{rd['note']}")
@@ -107,12 +145,12 @@ def cmd_yi(a, conn):
         out("记下了。")
         return
     if a.ask:
-        input(f"心里想着：「{a.ask}」。准备好了按回车，掷六次铜钱…")
+        ask(f"心里想着：「{a.ask}」。准备好了按回车，掷六次铜钱…")
         from . import web
 
         r = web.ask_yi(conn, a.ask)
     else:
-        intention = input("心里想着什么？（可以不写，直接回车）").strip() if sys.stdin.isatty() else ""
+        intention = ask("心里想着什么？（可以不写，直接回车）").strip()
         r = yi.cast_today(conn, intention or None)
     lines = r["lines"]
     for i in range(5, -1, -1):
@@ -503,7 +541,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--feeling", "-f", choices=list(now.FEELINGS))
     s.add_argument("--minutes", "-m", type=int, help="此刻有多少分钟")
     s.add_argument("--decide", action="store_true", help="帮我决定：不随机，直接给最合适的")
+    s.add_argument("--place", "-p", choices=list(tianshi.PLACES), help="地利：你现在在哪里")
+    s.add_argument("--her", action="store_true", help="她在身边")
     s.set_defaults(fn=cmd_now)
+
+    sub.add_parser("tian", help="天时：此刻的时辰、天光、天气、节气与候、时令之卦").set_defaults(fn=cmd_tian)
 
     sub.add_parser("pocket", help="口袋：装着的杂事，不追你").set_defaults(fn=cmd_pocket)
 

@@ -63,7 +63,22 @@ def gather(conn, end: date) -> dict:
         "next_horizon": ahead[0] if ahead else None,
         "world": world,
         "noticed": [r["content"] for r in mind.reflections(conn) if s <= r["occurred_at"][:10] <= e][:3],
+        "season": _season_turn(end),
     }
+
+
+def _season_turn(end: date) -> str:
+    """下一周的天时：节气、以及时令之卦是否要换了。"""
+    from . import tianshi
+
+    now_s, next_s = tianshi.season(end), tianshi.season(end + timedelta(days=7))
+    line = f"现在是{now_s['term']}，{now_s['hex']['symbol']} {now_s['hex']['name']}卦当令：{now_s['text']}"
+    if next_s["hex"]["n"] != now_s["hex"]["n"]:
+        line += (f"\n\n下周{next_s['term']}，时令之卦换成 {next_s['hex']['symbol']} {next_s['hex']['name']}："
+                 f"{next_s['text']}")
+    elif next_s["term"] != now_s["term"]:
+        line += f"\n\n下周进入{next_s['term']}。"
+    return line
 
 
 def _template(d: dict) -> str:
@@ -101,6 +116,8 @@ def _template(d: dict) -> str:
             q = c["question"] or "今日"
             L.append(f"- {c['day']} {q}：{c['title']}" + (f"。后来：{c['outcome']}" if c["outcome"] else ""))
         L.append("")
+    if d.get("season"):
+        L += ["## 天时", "", d["season"], ""]
     if d["world"]:
         L += ["## 外面的势", ""] + [f"- {'顺' if t['direction'] > 0 else '逆'}｜{t['title']}" for t in d["world"][:3]] + [""]
     if d["noticed"]:

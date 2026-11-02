@@ -243,9 +243,11 @@ light_dinners_per_week = 4   # 支持她减肥：每周至少几顿轻食晚餐
 # ---------------------------------------------------------------
 # 此刻：当你问"现在做什么"时，除了口袋里的事，系统也可以建议这些。
 # 它们不是任务，是照顾自己的方式。feelings = 适合什么感受的时候；when = any / day / evening
+# need = 在哪里做得了（地利）：leave 出去走走 / camera 带相机 / phone 手机 / home 在家 / any 哪里都行
 # ---------------------------------------------------------------
 [[now_options]]
 title = "出去走 20 分钟，不带目的地"
+need = "leave"
 minutes = 20
 outdoor = true
 feelings = ["烦躁", "疲惫", "低落", "平静"]
@@ -253,48 +255,56 @@ when = "any"
 
 [[now_options]]
 title = "拿起相机，拍一张此刻的光"
+need = "camera"
 minutes = 15
 feelings = ["平静", "充沛", "低落"]
 when = "day"
 
 [[now_options]]
 title = "给她发一条消息，说说你此刻在想什么"
+need = "phone"
 minutes = 5
 feelings = ["充沛", "平静", "疲惫", "烦躁", "低落"]
 when = "any"
 
 [[now_options]]
 title = "泡杯茶，什么都不做，坐 10 分钟"
+need = "any"
 minutes = 10
 feelings = ["疲惫", "烦躁", "低落"]
 when = "any"
 
 [[now_options]]
 title = "读 20 分钟书"
+need = "any"
 minutes = 20
 feelings = ["平静", "疲惫"]
 when = "any"
 
 [[now_options]]
 title = "收拾一个小角落，10 分钟就停"
+need = "home"
 minutes = 10
 feelings = ["烦躁", "平静"]
 when = "any"
 
 [[now_options]]
 title = "拉伸 10 分钟，或者冲个热水澡"
+need = "home"
 minutes = 10
 feelings = ["疲惫", "烦躁", "低落"]
 when = "any"
 
 [[now_options]]
 title = "好好做一顿饭，慢慢吃"
+need = "home"
 minutes = 60
 feelings = ["平静", "充沛", "低落"]
 when = "evening"
 
 [[now_options]]
 title = "今晚早点睡"
+need = "home"
 minutes = 0
 feelings = ["疲惫", "低落"]
 when = "evening"
