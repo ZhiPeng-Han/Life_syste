@@ -5,7 +5,7 @@
 3. 先不设 LIFEOS_TELEGRAM_CHAT，运行 python -m lifeos bot，给机器人发一条消息，
    终端会打印你的 chat id；再 export LIFEOS_TELEGRAM_CHAT=那个id 后重启。只有这个 chat 能写入你的数据。
 
-命令：/now 此刻宜（可加感受和地点：/now 疲惫 家）  /tian 天时  /morning 早安  /yi 今日之卦（/yi 问题 = 问一事）  /shi 本周大势  /junzi 君子卡  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
+命令：/now 此刻宜（可加感受和地点：/now 疲惫 家）  /tian 天时  /jushi 人生局势  /morning 早安  /yi 今日之卦（/yi 问题 = 问一事）  /shi 本周大势  /junzi 君子卡  /today 今天的结构  /her 惊喜建议  /menu 本周菜单  /deal 型号 报价 [瑕疵…]
 其他任何文字都会被当作"随手记"。
 """
 
@@ -56,6 +56,10 @@ def handle(text: str, conn) -> str:
                          + [f"{ln['name']}：{ln['text']}" for ln in st["lines"]]
                          + [f"{st['related'][k]['label']} {st['related'][k]['full']}：{st['related'][k]['plain']}" for k in ("hu", "zong")]
                          + [rd["note"]])
+    if text.startswith("/jushi"):
+        from . import jushi
+
+        return "\n".join(["🧭 人生局势"] + jushi.report(conn)["summary"])
     if text.startswith("/tian"):
         t = tianshi.now(conn)
         sea = t["season"]

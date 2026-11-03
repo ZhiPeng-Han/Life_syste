@@ -343,6 +343,53 @@ MIGRATIONS = [
         created_at TEXT NOT NULL
     );
     """,
+    # v7：此刻宜的选择库（可增删、会从你的选择里学习）；人生局势的快照与自评；选择分析
+    """
+    CREATE TABLE moments (
+        id INTEGER PRIMARY KEY,
+        key TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        cat TEXT,                       -- 身体 / 心 / 她 / 器材 / 学 / 创作 / 家 / 外 / 人 / 整理 / 睡
+        need TEXT DEFAULT 'any',        -- 地利：any / home / desk / out / leave / camera / phone / work
+        minutes INTEGER DEFAULT 15,
+        feelings TEXT,                  -- JSON；空 = 什么感受都可以
+        whn TEXT DEFAULT 'any',         -- any / morning / day / evening / night / daylight / golden / dark / weekend
+        weather TEXT DEFAULT 'any',     -- any / dry / wet
+        her TEXT DEFAULT 'any',         -- any / with / without
+        energy TEXT DEFAULT 'low',
+        stances TEXT,                   -- JSON：和哪些姿态（卦、时令）相合
+        why TEXT,
+        source TEXT DEFAULT 'library',  -- library / me / ai
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    );
+    CREATE TABLE moment_log (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        key TEXT NOT NULL,
+        title TEXT,
+        action TEXT NOT NULL,           -- ok / next / done / not_now
+        place TEXT,
+        feeling TEXT,
+        part TEXT
+    );
+    CREATE INDEX idx_moment_log_key ON moment_log(key, at);
+    CREATE TABLE situations (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        kind TEXT NOT NULL,             -- rating（自评）/ report（局势快照）
+        data TEXT NOT NULL
+    );
+    CREATE TABLE choices (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,          -- JSON：每个选项与你的判断
+        analysis TEXT,                  -- JSON：各个角度的分析
+        chosen TEXT,
+        decision_id INTEGER             -- 记进决策日志，到期回看（实践检验）
+    );
+    """,
 ]
 
 

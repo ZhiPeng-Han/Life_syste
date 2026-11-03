@@ -749,7 +749,7 @@ class RightNowTest(unittest.TestCase):
 
         at = tianshi.sun(date(2026, 11, 7))["set"] - timedelta(minutes=20)  # 不依赖本机时区
         r = now.right_now(self.conn, at, place="家", feeling="平静")
-        self.assertEqual(r["pick"]["key"], "m:golden")
+        self.assertEqual(r["pick"]["key"], "l:golden-walk")
         self.assertTrue(r["tian"]["golden"])
 
     def test_place_filters_and_her(self):
@@ -788,6 +788,143 @@ class SelfReviewFixesTest(unittest.TestCase):
         with mock.patch("sys.stdin") as stdin:
             stdin.isatty.return_value = False
             self.assertEqual(cli.ask("> ", "q"), "q")
+
+
+class MomentsLibraryTest(unittest.TestCase):
+    def setUp(self):
+        from lifeos import moments
+
+        self.m = moments
+        self.conn = fresh()
+        self.conn.execute("DELETE FROM tasks")
+        self.conn.commit()
+
+    def test_library_syncs_and_keeps_your_choice(self):
+        lib = self.m.listing(self.conn)
+        self.assertGreater(len(lib), 60)
+        self.m.set_active(self.conn, "tea", False)
+        db.set_meta(self.conn, "moments_hash", "changed")  # 库文件更新了
+        self.m.sync(self.conn)
+        self.assertEqual(self.conn.execute("SELECT active FROM moments WHERE key = 'tea'").fetchone()[0], 0)
+
+    def test_learns_from_choices(self):
+        at = datetime(2026, 11, 7, 11, 0)
+        before = next(c for c in now.right_now(self.conn, at, place="家", feeling="疲惫")["alts"] + [now.right_now(self.conn, at, place="家", feeling="疲惫")["pick"]])
+        for _ in range(4):
+            self.m.log(self.conn, before["key"], "next", before["title"])
+        r = now.right_now(self.conn, at, place="家", feeling="疲惫")
+        self.assertNotEqual(r["pick"]["key"], before["key"])
+
+    def test_your_own_moment_and_place(self):
+        key = self.m.add(self.conn, "去河边坐一会儿", "leave", 20)
+        r = now.right_now(self.conn, datetime(2026, 11, 7, 11, 0), place="路上", feeling="平静")
+        self.assertNotIn(f"l:{key}", [c["key"] for c in [r["pick"], *r["alts"]]])
+        self.assertIn("去河边坐一会儿", [m["title"] for m in self.m.listing(self.conn)])
+
+    def test_rain_option_shows_when_raining(self):
+        db.set_meta(self.conn, "weather:2026-11-07", {"label": "雨", "icon": "🌧", "code": 63, "city": "伦敦", "tmin": 6, "tmax": 10,
+                                                       "rain": 90, "wet": True, "hourly": {str(h): {"t": 8, "p": 90, "c": 63} for h in range(24)}})
+        c = self.m.candidates(self.conn, datetime(2026, 11, 7, 11, 0), {"daylight": True, "golden": False,
+                              "weather": {"wet_now": True, "dry_soon": False}}, "平静", 1.0, "家", False, None, None, None)
+        keys = [x["key"] for x in c]
+        self.assertIn("l:rain-sound", keys)
+        self.assertNotIn("l:brisk-walk", keys)
+
+
+class MingliTest(unittest.TestCase):
+    def test_known_charts(self):
+        from lifeos import mingli
+
+        p = mingli.pillars(datetime(1893, 12, 26, 7, 30))
+        self.assertEqual([p["year"], p["month"], p["day"], p["hour"]], ["癸巳", "甲子", "丁酉", "甲辰"])
+        p = mingli.pillars(datetime(2000, 1, 1, 12))
+        self.assertEqual((p["year"], p["month"], p["day"]), ("己卯", "丙子", "戊午"))  # 立春之前，仍是己卯年
+        self.assertEqual(mingli.pillars(datetime(2026, 6, 1, 12))["year"], "丙午")
+
+    def test_ten_gods(self):
+        from lifeos import mingli
+
+        self.assertEqual(mingli.ten_god("癸", "丙"), "正财")
+        self.assertEqual(mingli.ten_god("甲", "庚"), "七杀")
+        self.assertEqual(mingli.ten_god("甲", "癸"), "正印")
+        self.assertEqual(mingli.ten_god("丙", "戊"), "食神")
+
+    def test_never_used_in_scoring(self):
+        from lifeos import jushi, mingli
+
+        conn = fresh()
+        a = jushi.choose(conn, "q", [{"name": "去冰岛"}], save=False)
+        mingli.set_birth(conn, "1997-05-01 08:30")
+        b = jushi.choose(conn, "q", [{"name": "去冰岛"}], save=False)
+        self.assertEqual(a["options"][0]["score"], b["options"][0]["score"])
+        self.assertIn("mingli", b)
+
+
+class JushiTest(unittest.TestCase):
+    def setUp(self):
+        from lifeos import jushi
+
+        self.j = jushi
+        self.conn = fresh()
+
+    def test_main_contradiction_from_time(self):
+        for d, m in [("器材事业", 1500), ("Part3", 60), ("建筑工作", 10800), ("关系", 2700)]:
+            review.log_time(self.conn, d, m)
+        r = self.j.report(self.conn)
+        self.assertEqual(r["main"]["a"], "Part3")
+        self.assertIn("Part3", r["main"]["aspect"])
+        self.assertTrue(r["markdown"].startswith("# 🧭 人生局势"))
+
+    def test_energy_and_gaps(self):
+        for f in ["疲惫", "低落", "疲惫", "平静", "疲惫"]:
+            now.log_state(self.conn, f)
+        review.log_time(self.conn, "关系", 60)
+        self.j.rate(self.conn, {"关系": 9, "Part3": 3})
+        r = self.j.report(self.conn)
+        self.assertIn("精力", [c["a"] for c in r["contradictions"]])
+        self.assertTrue(any("关系" in g for g in r["gaps"]))
+
+    def test_campaign_stages(self):
+        self.assertEqual(self.j._stage(0.1)[0], "战略防御")
+        self.assertEqual(self.j._stage(0.5)[0], "战略相持")
+        self.assertEqual(self.j._stage(0.9)[0], "战略反攻")
+        self.assertTrue(any("质变" in x for x in self.j.thresholds([{"name": "冰岛基金", "progress": 0.85, "pct": 85}])))
+
+    def test_choose_and_decide(self):
+        a = self.j.choose(self.conn, "要不要做大器材生意", [
+            {"name": "加码收货，做大器材生意", "reversible": False, "worst_ok": False},
+            {"name": "维持现状", "reversible": True, "her": 1, "ten_years": True}])
+        self.assertEqual(a["options"][0]["name"], "维持现状")
+        self.assertTrue(any("承受不了" in f for f in a["options"][1]["flags"]))
+        did = self.j.decide(self.conn, a["id"], "维持现状", "晚上能多出两次 Part 3", 0.7)
+        self.assertEqual(self.conn.execute("SELECT choice FROM decisions WHERE id = ?", (did,)).fetchone()[0], "维持现状")
+
+    def test_shift_is_noticed(self):
+        for f in ["疲惫", "低落", "疲惫", "疲惫"]:
+            now.log_state(self.conn, f)
+        self.j.report(self.conn, save=True)
+        self.conn.execute("DELETE FROM states")
+        for d, m in [("器材事业", 1500), ("Part3", 60)]:
+            review.log_time(self.conn, d, m)
+        self.assertIn("转化", self.j.report(self.conn).get("shift", ""))
+
+
+class DailyMomentsTest(unittest.TestCase):
+    def test_ai_can_add_moments_and_undo(self):
+        import json as _json
+        from lifeos import daily
+
+        conn = fresh()
+        daily.prepare(conn, fetch_news=False)
+        path = os.path.join(os.environ["LIFEOS_HOME"], "ai", "outbox", "t.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump({"date": date.today().isoformat(), "moments": [
+                {"title": "去泰晤士河边看一会儿落日", "need": "leave", "minutes": 30, "when": "golden", "why": "她喜欢河边"}]}, f, ensure_ascii=False)
+        res = daily.apply(conn, path, "test")
+        self.assertEqual(conn.execute("SELECT source FROM moments WHERE title = '去泰晤士河边看一会儿落日'").fetchone()[0], "ai")
+        daily.undo(conn, res["run_id"] if isinstance(res, dict) and "run_id" in res else None)
+        self.assertIsNone(conn.execute("SELECT 1 FROM moments WHERE title = '去泰晤士河边看一会儿落日'").fetchone())
 
 
 if __name__ == "__main__":

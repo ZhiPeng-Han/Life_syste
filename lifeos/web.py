@@ -16,8 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (business, config, daily, db, decisions, family, letter, meals, memory, mind, now, photos, planner, relationship, review,
-               shi, tasks, tianshi, yi)
+from . import (business, config, daily, db, decisions, family, jushi, letter, meals, memory, mind, mingli, moments, now, photos, planner,
+               relationship, review, shi, tasks, tianshi, yi)
 
 STATIC = Path(__file__).parent / "static"
 TOKEN = os.environ.get("LIFEOS_TOKEN")
@@ -59,6 +59,13 @@ def api_get(path: str, q: dict, conn):
         if one("note"):
             sug["ai"] = now.ai_note(conn, one("feeling"), one("note"), sug)
         return sug
+    if path == "/api/jushi":
+        r = jushi.report(conn)
+        r["choices"] = db.rows(conn.execute("SELECT id, at, question, chosen FROM choices ORDER BY id DESC LIMIT 5"))
+        r["birth"] = db.get_meta(conn, "birth")
+        return r
+    if path == "/api/moments":
+        return {"moments": moments.listing(conn), "needs": tianshi.NEED_LABEL}
     if path == "/api/family":
         return {"horizons": family.horizons(conn), "rituals": family.rituals(conn), "north_star": family.north_star(conn),
                 "places": family.places(conn), "wishes": relationship.wishes(conn)}
@@ -121,6 +128,28 @@ def api_post(path: str, body: dict, conn):
     parts = path.strip("/").split("/")  # ["api", "items", "L-2026-001"]
     if path == "/api/capture":
         return memory.capture(body["text"], source="web", conn=conn)
+    if path == "/api/jushi/rate":
+        jushi.rate(conn, body.get("ratings", {}), body.get("note", ""))
+        return {"ok": True}
+    if path == "/api/jushi/choose":
+        return jushi.choose(conn, body["question"], body.get("options", []))
+    if path == "/api/jushi/decide":
+        return {"decision_id": jushi.decide(conn, int(body["id"]), body["chosen"], body.get("prediction", ""),
+                                            float(body.get("confidence", 0.6)), int(body.get("days", 30)))}
+    if path == "/api/jushi/ai":
+        return {"text": jushi.ai_reading(conn, jushi.report(conn))}
+    if path == "/api/mingli":
+        mingli.set_birth(conn, body["birth"])
+        return {"ok": True}
+    if path == "/api/moments":
+        return {"key": moments.add(conn, body["title"], body.get("need", "any"), int(body.get("minutes", 15)),
+                                   body.get("cat") or "我的", body.get("feelings") or [], body.get("when", "any"), body.get("her", "any"))}
+    if path == "/api/moments/log":
+        moments.log(conn, body["key"], body["action"], body.get("title", ""), body.get("place"), body.get("feeling"), body.get("part"))
+        return {"ok": True}
+    if parts[:2] == ["api", "moments"] and len(parts) == 4 and parts[3] in ("on", "off"):
+        moments.set_active(conn, parts[2], parts[3] == "on")
+        return {"ok": True}
     if path == "/api/yi/today":
         return yi.cast_today(conn, body.get("intention"))
     if path == "/api/horizons":
@@ -324,6 +353,7 @@ TEXT_ROUTES = {
     "/api/junzi": lambda conn, q, body: (lambda c: f"{c['symbol']} {c['image']}\n{c['act']}\n——{c['plain']}")(yi.junzi_card()),
     "/api/shi": lambda conn, q, body: shi.digest(conn),
     "/api/now": lambda conn, q, body: _now_text(conn, q),
+    "/api/jushi": lambda conn, q, body: "\n".join(["🧭 人生局势"] + jushi.report(conn)["summary"]),
     "/api/right_now": lambda conn, q, body: now.render_right_now(now.right_now(conn, place=q.get("place", [""])[0] or None)),
     "/api/her": lambda conn, q, body: "💡 今天的惊喜建议\n" + "\n".join(
         f"[{i['scale']}] {i['idea']}" for i in relationship.ideas(conn)),

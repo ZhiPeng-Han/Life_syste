@@ -10,7 +10,7 @@ import random
 import re
 from datetime import date, datetime, timedelta
 
-from . import config, daily, db, family, llm, mind, photos, planner, relationship, shi, tasks, tianshi, yi
+from . import config, daily, db, family, llm, mind, moments, photos, planner, relationship, shi, tasks, tianshi, yi
 
 FEELINGS = {
     "充沛": {"icon": "☀️", "energy": 8, "mood": 8, "allow": {"high", "medium", "low"}, "care": 0.6,
@@ -139,6 +139,12 @@ def _last_feeling(conn, at: datetime) -> str | None:
     return None
 
 
+def _custom_now_options() -> bool:
+    """你在 data/rules.toml 里自己写了 [[now_options]] 的话，继续用它们。"""
+    path = config.home() / "rules.toml"
+    return path.exists() and "now_options" in path.read_text(encoding="utf-8")
+
+
 def _active_block(at: datetime) -> dict | None:
     m = at.hour * 60 + at.minute
     return next((b for b in planner.blocks_for(at.date()) if b["start"] <= m < b["end"]), None)
@@ -155,6 +161,7 @@ def right_now(conn, at: datetime | None = None, place: str | None = None, feelin
         guessed = False
     else:
         place, guessed = tianshi.guess_place(conn, at)
+    her_known = her is not None or tianshi.her_known(conn, at)
     if her is not None:
         tianshi.set_with_her(conn, her)
     else:
@@ -165,6 +172,8 @@ def right_now(conn, at: datetime | None = None, place: str | None = None, feelin
     block = _active_block(at)
     wx = t["weather"] or {}
     cands = candidates(conn, feel, minutes, at, place)
+    if moments.has_library(conn) and not _custom_now_options():
+        cands = [c for c in cands if c["kind"] != "care"]  # 旧的 [[now_options]] 已经并进了选择库
 
     # 天时本身给出的可能性
     late = t["part"] == "深夜" or at.hour >= 23
@@ -174,15 +183,20 @@ def right_now(conn, at: datetime | None = None, place: str | None = None, feelin
     if block and not late:
         kind_title = {"关系": "放下手机，好好和她在一起", "建筑工作": "专心做手上的项目，别的先放一放"}.get(
             block["domain"] or "", "就做这件事，别的先放一放")
-        cands.append({"kind": "block", "key": f"b:{block['title']}", "title": f"{block['title']}：{kind_title}",
-                      "domain": block["domain"], "need": "any", "minutes": block["end"] - at.hour * 60 - at.minute,
-                      "score": 6.0 if block["kind"] == "fixed" else 24.0 if block["domain"] == "关系" else 8.0,
+        apart = block["domain"] == "关系" and her_known and not her
+        cands.append({"kind": "block", "key": f"b:{block['title']}",
+                      "title": f"{block['title']}：她不在身边，给她打个电话吧" if apart else f"{block['title']}：{kind_title}",
+                      "domain": block["domain"], "need": "phone" if apart else "any", "minutes": block["end"] - at.hour * 60 - at.minute,
+                      "score": 6.0 if block["kind"] == "fixed" else 10.0 if apart else 24.0 if block["domain"] == "关系" else 8.0,
                       "tian_note": f"现在是你给自己定下的「{block['title']}」的时间（到 {planner._fmt(block['end'])}）",
                       "reason": "这是你自己定下的节律，不是系统安排的。想换也可以。"})
-    if t["golden"] and not wx.get("wet_now") and place in ("家", "外面") and feel in ("平静", "充沛", "低落"):
-        cands.append({"kind": "moment", "key": "m:golden", "title": "带上相机出去，拍 20 分钟黄金时刻的光", "domain": "此刻",
-                      "need": "camera", "minutes": 20, "score": 13.0,
-                      "tian_note": t["light"], "reason": "一天里光最好的时候就这一会儿，错过就要等明天。"})
+    # 选择库：身体、心、她、器材、学、创作、家、外、人……按天时、地利、人和筛过
+    if not late:
+        lib = moments.candidates(conn, at, t, feel, FEELINGS[feel]["care"], place, her, minutes,
+                                 yi.today_stance(conn), season_stance)
+        for c in lib:
+            c["kind"] = "lib"
+        cands += lib
 
     out = []
     for c in cands:
@@ -213,7 +227,7 @@ def right_now(conn, at: datetime | None = None, place: str | None = None, feelin
                 tian.append(f"正是「{block['title']}」的时间")
             if late and c["kind"] == "task":
                 score *= 0.2
-        if need in OUTSIDE and c["kind"] != "moment":
+        if need in OUTSIDE and c["kind"] != "moment" and not (c["kind"] == "lib" and c.get("tian_note")):
             if wx.get("wet_now"):
                 if need != "out":
                     continue
@@ -233,6 +247,8 @@ def right_now(conn, at: datetime | None = None, place: str | None = None, feelin
                 ren.append("她就在身边")
             elif c["kind"] == "task" and not c.get("urgent"):
                 score *= 0.6
+            if c["kind"] == "task" and need in ("desk", "work") and not c.get("urgent"):
+                score *= 0.5  # 她在身边时，别对着电脑
         if known:
             ren.append(FEELINGS[known]["say"])
         if c.get("mind_note"):
@@ -439,6 +455,15 @@ def morning(conn, on: date | None = None) -> str:
         lines.append(f"🌏 大势：{t['title']}（{'顺' if t['direction'] > 0 else '逆' if t['direction'] < 0 else '观'}）")
     if note.get("shi"):
         lines.append(f"🧭 {note['shi']}")
+    if on.weekday() == 0:
+        from . import jushi
+
+        try:
+            m = jushi.report(conn, on)["main"]
+            if m:
+                lines.append(f"⚖️ 这周的主要矛盾：{m['title']}。一着：{m['move']}")
+        except Exception:  # noqa: BLE001 —— 早安不能因为局势出错而发不出来
+            pass
     if note.get("her"):
         lines.append(f"❤️ {note['her']}")
     lines.append("需要的时候问我「此刻宜」。什么都不问，也很好。")

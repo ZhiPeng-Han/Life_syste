@@ -17,7 +17,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import business, config, db, mind, relationship, shi
+from . import business, config, db, mind, relationship, shi, moments, tianshi
 
 KINDS = ("synergy", "competition", "influence", "dependency", "related")
 TYPES = ("episodic", "semantic", "procedural", "prospective", "normative")
@@ -61,6 +61,13 @@ SCHEMA = {
             "her": {"type": "string", "description": "一个和她有关的小提醒或惊喜点子，引用她说过的话"},
             "shi": {"type": "string", "description": "顺势而为：今天外面的势对他意味着什么"}}},
         "letter": {"type": "string", "description": "只在周日写：给这一周的信（Markdown，300 字内，最后留一个问题）"},
+        "moments": {"type": "array", "description": "0-3 条新的「此刻宜」选择：结合他最近的生活、季节和天气，此刻可以做的小事（不是任务）", "items": {
+            "type": "object", "required": ["title", "need", "minutes"],
+            "properties": {"title": {"type": "string"}, "why": {"type": "string"}, "minutes": {"type": "integer"},
+                           "need": {"type": "string", "enum": ["any", "home", "desk", "out", "leave", "camera", "phone", "work"]},
+                           "cat": {"type": "string"}, "when": {"type": "string", "enum": ["any", "morning", "day", "noon", "evening", "night", "daylight", "golden", "dark", "weekend"]},
+                           "her": {"type": "string", "enum": ["any", "with", "without"]},
+                           "feel": {"type": "array", "items": {"type": "string", "enum": ["充沛", "平静", "疲惫", "烦躁", "低落"]}}}}},
         "improvements": {"type": "array", "description": "0-3 条系统提升建议：系统哪里不懂他、哪里多余、哪里可以更好", "items": {
             "type": "object", "required": ["title", "why", "how"],
             "properties": {"title": {"type": "string"}, "why": {"type": "string"}, "how": {"type": "string"},
@@ -146,6 +153,8 @@ def prepare(conn, fetch_news: bool = True) -> dict:
         "date": today, "since": since, "weekday": "一二三四五六日"[date.today().weekday()],
         "write_letter": date.today().weekday() == 6,
         "season": _season_line(),
+        "jushi": _jushi_lines(conn),
+        "moment_stats": _moment_stats(conn),
         "domains": list(config.domains()), "topics": [e["name"] for e in mind.dictionary(conn)],
         "inputs": inputs, "memories": mems, "needs_confirm": pending, "facts": facts, "context": context,
         "reflections": [{"id": r["id"], "content": r["content"]} for r in mind.reflections(conn)],
@@ -166,6 +175,24 @@ def prepare(conn, fetch_news: bool = True) -> dict:
     return {"inbox": str(stem.with_suffix(".md")), "outbox": str(ai_dir("outbox") / f"{today}.json"),
             "schema": str(ai_dir() / "schema.json"), "inputs": len(inputs), "memories": len(mems),
             "headlines": len(headlines), "write_letter": pkg["write_letter"]}
+
+
+def _jushi_lines(conn) -> list[str]:
+    from . import jushi
+
+    try:
+        r = jushi.report(conn)
+    except Exception as e:  # noqa: BLE001 —— 局势出错不该挡住每日梳理
+        return [f"（局势计算出错：{e}）"]
+    return r["summary"] + [f"次要矛盾：{c['title']}——{c['aspect']}" for c in r["contradictions"][1:3]] + r.get("gaps", [])
+
+
+def _moment_stats(conn) -> list[str]:
+    since = (datetime.now() - timedelta(days=30)).isoformat(timespec="seconds")
+    rows = conn.execute(
+        """SELECT title, SUM(action IN ('ok', 'done')), SUM(action IN ('next', 'not_now')) FROM moment_log
+           WHERE at >= ? AND title != '' GROUP BY title ORDER BY COUNT(*) DESC LIMIT 10""", (since,)).fetchall()
+    return [f"{t}：好 {y} / 换 {n}" for t, y, n in rows]
 
 
 def _season_line() -> str:
@@ -199,6 +226,11 @@ def _brief(p: dict) -> str:
         L += ["## 她的愿望", ""] + [f"- {w['content']}（{w['status']}，{w['mentioned_at']}）" for w in p["wishes"]] + [""]
     if p["context"]:
         L += ["## 更早的记忆（上下文，可作为领悟的证据）", ""] + [f"- {m['id']} {m['day']} [{m['domain']}] {m['content']}" for m in p["context"]] + [""]
+    if p.get("jushi"):
+        L += ["## 人生局势（系统按数据算的，供参考）", ""] + [f"- {x}" for x in p["jushi"]]
+        L += ["- 写 notes 和领悟时可以参考主要矛盾，但不要说教；他的判断优先", ""]
+    if p.get("moment_stats"):
+        L += ["## 此刻宜：他最近点\"好\"和\"换一个\"的（30 天）", ""] + [f"- {x}" for x in p["moment_stats"]] + [""]
     if p.get("season"):
         L += ["## 天时", "", f"- {p['season']}", "- notes.morning / notes.shi 可以自然地借用时令（比如剥卦当令：宜收宜藏），但不要说吉凶", ""]
     L += ["## 现在的天下大势", ""] + ([f"- #{t['id']} {'顺' if t['direction'] > 0 else '逆' if t['direction'] < 0 else '观'}"
@@ -390,6 +422,20 @@ def apply(conn, path: str | Path, source: str = "claude-code") -> dict:
         p.parent.mkdir(exist_ok=True)
         p.write_text(_str(data["letter"], 6000), encoding="utf-8")
         log.append(f"✉️ 这周的信：{p.name}")
+
+    # 此刻宜的新选择
+    for m in data.get("moments", [])[:3]:
+        title = _str(m.get("title"), 80)
+        if not title or conn.execute("SELECT 1 FROM moments WHERE title = ?", (title,)).fetchone():
+            continue
+        need = m.get("need") if m.get("need") in tianshi.NEED_LABEL else "any"
+        whn = m.get("when") if m.get("when") in ("any", "morning", "day", "noon", "evening", "night", "daylight", "golden", "dark", "weekend") else "any"
+        feels = [f for f in m.get("feel", []) if f in ("充沛", "平静", "疲惫", "烦躁", "低落")]
+        key = moments.add(conn, title, need, max(0, min(240, int(m.get("minutes") or 15))), _str(m.get("cat"), 10) or "新的",
+                          feels, whn, m.get("her") if m.get("her") in ("any", "with", "without") else "any", _str(m.get("why"), 120))
+        conn.execute("UPDATE moments SET source = 'ai' WHERE key = ?", (key,))
+        run.inserted("moments", conn.execute("SELECT id FROM moments WHERE key = ?", (key,)).fetchone()[0])
+        log.append(f"🌿 此刻宜：{title}")
 
     # 系统提升建议
     for i in data.get("improvements", [])[:3]:

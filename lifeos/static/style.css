@@ -195,3 +195,17 @@ details.struct summary { cursor: pointer; color: var(--accent); font-size: 14px;
 .areas { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 13px; margin: 6px 0; }
 .areas dt { color: var(--muted); }
 .areas dd { margin: 0; }
+
+/* 人生局势 */
+.main-contra { border-left: 3px solid var(--accent); }
+.wheel .wrow { display: grid; grid-template-columns: 7.5em 1fr 3.2em 3em; gap: 8px; align-items: center; padding: 4px 0; }
+.wheel .wrow .bar { margin: 0; }
+.rate { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px 10px; margin: 8px 0; }
+.rate label { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.rate input { width: 56px; }
+.rate button { grid-column: 1 / -1; justify-self: start; }
+.control { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.control p { margin: 4px 0; }
+#choose-form .opt { border-top: 1px dashed var(--line); padding: 8px 0; margin-top: 8px; }
+#choose-form .opt > input { width: 100%; margin-bottom: 6px; }
+#choose-form select { font-size: 13px; padding: 4px 6px; }

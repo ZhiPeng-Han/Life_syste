@@ -1,0 +1,117 @@
+# 此刻宜的选择库：口袋里的事之外，"此刻"还可以做的事。
+#
+# 这份是默认库，会自动同步进数据库（按 key）。你可以：
+#   - 在 LifeOS「更多 → 此刻宜的选择库」里停用某条、添加自己的
+#   - 或者在 data/moments.toml 里写同样格式的条目（同 key 覆盖，新 key 追加）
+# 系统会从你的选择里学习：常点"好"的更常出现，常点"换一个"的慢慢沉下去，刚做过的会让一让。
+#
+# 字段：
+#   need   地利：any 哪里都行 / home 在家 / desk 电脑前 / out 要出门办事 / leave 出去走走 / camera 带相机 / phone 手机 / work 工作状态
+#   min    分钟
+#   feel   适合的感受（充沛 平静 疲惫 烦躁 低落），不写 = 都可以
+#   when   any / morning 清晨上午 / day 白天 / noon 午间 / evening 傍晚到晚上 / night 夜里 / daylight 天亮着 / golden 黄金时刻 / dark 天黑后 / weekend 周末
+#   weather any / dry 不下雨才行 / wet 下雨时更好
+#   her    any / with 她在身边 / without 她不在身边
+#   energy low / medium / high
+#   stance 和哪些姿态相合（进 守 养 合 学 省 断 慎）：今日之卦或时令之卦是这些姿态时，它会重一点
+#   why    一句为什么
+
+moment = [
+  # —— 身体
+  { key = "stretch", title = "拉伸 10 分钟", cat = "身体", need = "home", min = 10, feel = ["疲惫", "烦躁", "低落", "平静"], stance = ["养"], why = "身体松开，心也会跟着松一点" },
+  { key = "hot-shower", title = "冲个热水澡", cat = "身体", need = "home", min = 15, feel = ["疲惫", "烦躁", "低落"], when = "evening", stance = ["养"], why = "最便宜的复位按钮" },
+  { key = "squats", title = "做 3 组深蹲和俯卧撑，10 分钟", cat = "身体", need = "home", min = 10, feel = ["充沛", "平静", "烦躁"], energy = "medium", stance = ["进"], why = "把烦躁变成心跳" },
+  { key = "brisk-walk", title = "出去快走 20 分钟", cat = "身体", need = "leave", min = 20, feel = ["烦躁", "疲惫", "平静", "低落"], weather = "dry", stance = ["养", "省"], why = "走路是最温和的运动，也最容易想通事" },
+  { key = "run-5k", title = "跑一个 5 公里", cat = "身体", need = "leave", min = 35, feel = ["充沛", "烦躁"], weather = "dry", when = "daylight", energy = "high", stance = ["进"], why = "冰岛徒步需要体能" },
+  { key = "swim", title = "去游泳 40 分钟", cat = "身体", need = "out", min = 60, feel = ["充沛", "平静", "烦躁"], when = "day", energy = "medium", stance = ["进", "养"], why = "雨天也能做的运动" },
+  { key = "breathe", title = "做 5 分钟呼吸：吸 4 秒，停 7 秒，呼 8 秒", cat = "身体", min = 5, feel = ["烦躁", "低落", "疲惫"], stance = ["慎", "养"], why = "呼气比吸气长，身体会慢下来" },
+  { key = "nap", title = "午睡 20 分钟（定好闹钟）", cat = "身体", need = "home", min = 20, feel = ["疲惫"], when = "noon", stance = ["养"], why = "超过 30 分钟反而更困" },
+  { key = "water-move", title = "喝一大杯水，站起来走两圈", cat = "身体", min = 3, feel = ["疲惫", "平静", "烦躁"], why = "坐太久了" },
+  { key = "eyes-far", title = "眼睛离开屏幕，看远处 5 分钟", cat = "身体", min = 5, feel = ["疲惫", "烦躁"], when = "day", why = "建筑师的眼睛也需要休息" },
+  { key = "sun", title = "出去晒 10 分钟太阳", cat = "身体", need = "leave", min = 10, weather = "dry", when = "daylight", stance = ["养"], why = "冬天的英国，阳光很珍贵" },
+  { key = "early-bed", title = "今晚早点睡，十点半上床", cat = "睡", need = "home", min = 0, feel = ["疲惫", "低落"], when = "evening", stance = ["养", "守"], why = "大部分问题，睡一觉会小一半" },
+  { key = "paper-book", title = "关掉屏幕，读几页纸质书再睡", cat = "睡", need = "home", min = 20, when = "night", stance = ["养", "省"], why = "屏幕的光会把睡意推后" },
+  { key = "tomorrow-first", title = "写下明天的第一件事，然后去睡", cat = "睡", min = 3, when = "night", stance = ["守"], why = "写下来，脑子就不用替你记着" },
+
+  # —— 心
+  { key = "tea", title = "泡杯茶，什么都不做，坐 10 分钟", cat = "心", min = 10, feel = ["疲惫", "烦躁", "低落"], stance = ["养", "省"], why = "这不是任务，是照顾一下自己" },
+  { key = "three-lines", title = "写三行：今天发生了什么、我感觉怎样、我想要什么", cat = "心", min = 5, feel = ["平静", "低落", "烦躁"], stance = ["省"], why = "写下来，就从脑子里拿出来了" },
+  { key = "meditate", title = "安静坐 10 分钟，只数呼吸", cat = "心", min = 10, feel = ["烦躁", "低落", "平静"], stance = ["省", "养"], why = "数到十再从一开始，走神了也没关系" },
+  { key = "album", title = "完整听一张专辑，不切歌", cat = "心", min = 45, feel = ["平静", "疲惫", "低落"], when = "evening", stance = ["养"], why = "给注意力一段不被打断的时间" },
+  { key = "window", title = "看窗外 10 分钟，不看手机", cat = "心", min = 10, feel = ["疲惫", "烦躁"], stance = ["省"], why = "让眼睛和心都放空一下" },
+  { key = "worry-split", title = "写下此刻担心的事，分成：我能控制的 / 我能影响的 / 我控制不了的", cat = "心", min = 10, feel = ["烦躁", "低落"], stance = ["省", "慎"], why = "斯多葛的老办法：只在第一栏上用力" },
+  { key = "three-wins", title = "列出今天做到的三件小事", cat = "心", min = 5, feel = ["低落", "疲惫"], when = "evening", stance = ["省"], why = "低落时，人会忘记自己做到了什么" },
+  { key = "rain-sound", title = "听一会儿雨声，泡杯热的", cat = "心", need = "home", min = 15, weather = "wet", stance = ["养"], why = "下雨天本来就适合慢一点" },
+
+  # —— 她
+  { key = "msg-her", title = "给她发一条消息，说说你此刻在想什么", cat = "她", need = "phone", min = 5, her = "without", stance = ["合"], why = "不用有事才联系" },
+  { key = "call-her", title = "给她打个电话，聊 10 分钟", cat = "她", need = "phone", min = 10, her = "without", when = "evening", feel = ["平静", "充沛", "疲惫"], stance = ["合"], why = "声音比文字更近" },
+  { key = "walk-together", title = "和她出去散散步", cat = "她", need = "leave", min = 30, her = "with", weather = "dry", stance = ["合", "养"], why = "也是冰岛徒步的体能准备" },
+  { key = "cook-together", title = "一起做一顿清淡的晚饭", cat = "她", need = "home", min = 60, her = "with", when = "evening", stance = ["合", "养"], why = "支持她减肥，又是一起做的事" },
+  { key = "movie-together", title = "一起看一部电影，手机放远一点", cat = "她", need = "home", min = 120, her = "with", when = "evening", feel = ["疲惫", "平静"], stance = ["合", "养"], why = "陪伴不一定要说很多话" },
+  { key = "photo-her", title = "给她拍几张好看的照片", cat = "她", need = "camera", min = 20, her = "with", when = "daylight", weather = "dry", stance = ["合"], why = "你手里的相机，最该拍的是她" },
+  { key = "iceland-day", title = "和她一起想象冰岛的某一天：在哪醒来、做什么", cat = "她", min = 20, her = "with", stance = ["合", "进"], why = "盼头会让日子更有劲" },
+  { key = "ask-best", title = "问她：今天最开心的一件事是什么？", cat = "她", min = 10, her = "with", when = "evening", stance = ["合"], why = "问一个好问题，然后好好听" },
+  { key = "small-surprise", title = "给她准备一个很小的惊喜（一束花、一张纸条、她爱吃的）", cat = "她", min = 20, her = "without", stance = ["合"], why = "惊喜在小，不在贵" },
+  { key = "note-her", title = "写一张小纸条，放在她会看到的地方", cat = "她", need = "home", min = 5, her = "without", stance = ["合"], why = "她明天会看到" },
+  { key = "move-together", title = "和她一起做 20 分钟运动或拉伸", cat = "她", need = "home", min = 20, her = "with", feel = ["平静", "充沛"], stance = ["合", "进"], why = "她想减肥——她主导，你陪着" },
+  { key = "listen-her", title = "放下手机，听她说说最近在想什么", cat = "她", min = 30, her = "with", stance = ["合", "省"], why = "只听，不急着给建议" },
+  { key = "platform-chat", title = "和她聊 15 分钟转售平台：她最想负责哪一块？", cat = "她", min = 15, her = "with", feel = ["平静", "充沛"], stance = ["合", "进"], why = "她想和你一起做的事" },
+
+  # —— 器材
+  { key = "light-now", title = "拿起相机，拍一张此刻的光", cat = "器材", need = "camera", min = 15, feel = ["平静", "充沛", "低落"], when = "daylight", stance = ["省"], why = "看光，是摄影最好的练习" },
+  { key = "golden-walk", title = "带上相机出去，拍 20 分钟黄金时刻的光", cat = "器材", need = "camera", min = 20, when = "golden", weather = "dry", feel = ["平静", "充沛", "低落"], stance = ["进", "省"], why = "一天里光最好的时候就这一会儿" },
+  { key = "rain-reflect", title = "下雨了：出去拍街上的倒影", cat = "器材", need = "camera", min = 20, weather = "wet", when = "daylight", feel = ["平静", "充沛"], stance = ["省"], why = "雨天的倒影只有今天有" },
+  { key = "night-city", title = "夜里出去拍城市的灯", cat = "器材", need = "camera", min = 30, when = "dark", weather = "dry", feel = ["平静", "充沛"], stance = ["省"], why = "也能顺便测一测库存镜头的夜景表现" },
+  { key = "clean-lens", title = "清洁一支库存镜头，检查有没有雾、霉", cat = "器材", need = "home", min = 15, feel = ["平静", "疲惫"], stance = ["守"], why = "成色是卖价的一半" },
+  { key = "reshoot-listing", title = "给一件在售器材重拍主图", cat = "器材", need = "home", min = 20, when = "daylight", feel = ["平静", "充沛"], stance = ["进", "断"], why = "挂久了卖不动，常常是图的问题" },
+  { key = "market-check", title = "刷 15 分钟二手平台，看看你在意的型号行情", cat = "器材", need = "phone", min = 15, feel = ["平静", "疲惫"], stance = ["学", "慎"], why = "捡漏靠的是平时的价格感" },
+  { key = "listing-copy", title = "改一件在售器材的上架描述", cat = "器材", need = "desk", min = 15, feel = ["平静"], stance = ["进"], why = "写清楚瑕疵，买家更放心" },
+  { key = "bokeh-test", title = "试一支库存镜头的焦外，拍几张样张", cat = "器材", need = "camera", min = 20, when = "daylight", feel = ["平静", "充沛"], stance = ["学"], why = "样张也是上架素材" },
+
+  # —— 学
+  { key = "part3-card", title = "写一张 Part 3 卡片：今天工作里遇到的一个合同/管理问题", cat = "学", need = "desk", min = 20, feel = ["平静", "充沛"], energy = "medium", stance = ["学", "进"], why = "工作中的问题就是最好的考题" },
+  { key = "part3-review", title = "复习 5 张 Part 3 卡片", cat = "学", need = "phone", min = 10, feel = ["平静", "疲惫", "充沛"], stance = ["学", "守"], why = "间隔重复，比一次读很多更记得住" },
+  { key = "jct-clause", title = "读一条 JCT 合同条款，用自己的话写一句", cat = "学", min = 15, feel = ["平静", "充沛"], energy = "medium", stance = ["学"], why = "用自己的话写出来，才算懂了" },
+  { key = "podcast", title = "听一期建筑或执业相关的播客", cat = "学", need = "phone", min = 30, feel = ["平静", "疲惫"], stance = ["学"], why = "路上的时间也能积累" },
+  { key = "read-20", title = "读 20 分钟书", cat = "学", min = 20, feel = ["平静", "疲惫"], stance = ["学", "省", "养"], why = "每天一点，一年就是很多本" },
+  { key = "dezeen", title = "看一篇建筑评论，记下一个你喜欢的细节", cat = "学", need = "phone", min = 15, feel = ["平静", "疲惫"], stance = ["学"], why = "保持对好建筑的胃口" },
+
+  # —— 创作
+  { key = "sketch", title = "速写窗外的一栋建筑，15 分钟", cat = "创作", min = 15, feel = ["平静", "低落", "充沛"], when = "daylight", stance = ["省", "学"], why = "手比眼睛记得更牢" },
+  { key = "visit-building", title = "去附近看一栋好建筑，拍下你喜欢的地方", cat = "创作", need = "camera", min = 45, when = "daylight", weather = "dry", feel = ["平静", "充沛"], stance = ["学", "进"], why = "既是建筑的功课，也是自媒体的素材" },
+  { key = "topics", title = "记下 3 个视频选题", cat = "创作", need = "phone", min = 10, feel = ["平静", "充沛"], stance = ["进", "学"], why = "灵感来了先记，做不做以后再说" },
+  { key = "edit-30s", title = "剪一段 30 秒的素材", cat = "创作", need = "desk", min = 40, feel = ["充沛", "平静"], energy = "medium", stance = ["进"], why = "小作品比大计划更能推进" },
+  { key = "broll", title = "出去拍一段 B-roll 空镜", cat = "创作", need = "camera", min = 20, when = "daylight", weather = "dry", feel = ["平静", "充沛"], stance = ["进"], why = "空镜永远不嫌多" },
+
+  # —— 家
+  { key = "corner", title = "收拾一个小角落，10 分钟就停", cat = "家", need = "home", min = 10, feel = ["烦躁", "平静"], stance = ["断", "守"], why = "外面乱的时候，先让身边整齐一点" },
+  { key = "laundry", title = "洗一筐衣服", cat = "家", need = "home", min = 10, feel = ["平静", "疲惫"], stance = ["守"], why = "按下按钮就好，剩下的交给机器" },
+  { key = "desk-reset", title = "清空桌面，倒垃圾，5 分钟", cat = "家", need = "home", min = 5, feel = ["烦躁", "平静", "疲惫"], stance = ["断"], why = "复位一下，明天的你会感谢你" },
+  { key = "plants", title = "给植物浇浇水", cat = "家", need = "home", min = 5, stance = ["养"], why = "照顾一点会长的东西" },
+  { key = "lunch-prep", title = "准备好明天的午饭", cat = "家", need = "home", min = 20, when = "evening", feel = ["平静"], stance = ["守"], why = "吃得清淡一点，也省钱" },
+  { key = "sheets", title = "换一下床单", cat = "家", need = "home", min = 15, when = "weekend", stance = ["守", "养"], why = "新床单的那一晚会睡得特别好" },
+
+  # —— 外
+  { key = "cafe", title = "去咖啡馆坐一会儿，带本书", cat = "外", need = "out", min = 45, when = "day", feel = ["平静", "低落"], stance = ["养", "省"], why = "换个地方，换个心情" },
+  { key = "park", title = "去公园走一圈", cat = "外", need = "leave", min = 40, when = "daylight", weather = "dry", feel = ["平静", "低落", "烦躁"], stance = ["养"], why = "树和天空是免费的" },
+  { key = "exhibition", title = "去看一个展", cat = "外", need = "out", min = 90, when = "day", feel = ["平静", "充沛"], stance = ["学", "合"], why = "伦敦最好的东西很多是免费的" },
+  { key = "flowers", title = "回家路上买一束花", cat = "外", need = "out", min = 10, when = "day", stance = ["合"], why = "给家里，也给她" },
+
+  # —— 人
+  { key = "old-friend", title = "给一个很久没联系的朋友发条消息", cat = "人", need = "phone", min = 5, feel = ["平静", "充沛", "低落"], stance = ["合"], why = "关系也需要一点点浇水" },
+  { key = "call-family", title = "给家里打个电话", cat = "人", need = "phone", min = 20, when = "evening", feel = ["平静", "低落", "疲惫"], stance = ["合"], why = "他们在等你的消息" },
+  { key = "thank-colleague", title = "给一位帮过你的同事说声谢谢", cat = "人", need = "work", min = 5, when = "day", stance = ["合"], why = "工作关系里，感谢最便宜也最有用" },
+
+  # —— 路上
+  { key = "commute-window", title = "看窗外，不看手机，想一想今晚想和她做什么", cat = "心", min = 15, feel = ["平静", "疲惫"], stance = ["合", "省"], why = "路上是难得没人打扰的时间" },
+  { key = "commute-plan", title = "在路上想清楚今天最重要的一件事", cat = "心", need = "phone", min = 10, when = "morning", feel = ["平静", "充沛"], stance = ["进"], why = "到了就直接开始" },
+
+  # —— 整理与省
+  { key = "photo-cull", title = "删掉手机相册里 20 张不要的照片", cat = "整理", need = "phone", min = 10, feel = ["疲惫", "平静"], stance = ["断"], why = "删比存更难，也更轻松" },
+  { key = "pocket-letgo", title = "看一眼口袋，放下一件已经不重要的事", cat = "整理", min = 5, feel = ["烦躁", "平静"], stance = ["断"], why = "放下不是失败，是选择" },
+  { key = "reread-letter", title = "重读上周的信", cat = "整理", min = 10, feel = ["平静", "低落"], stance = ["省"], why = "看看一周前的自己" },
+  { key = "jushi-look", title = "打开「局势」，看看此刻人生的主要矛盾是什么", cat = "整理", min = 10, feel = ["平静", "充沛"], stance = ["省", "断"], why = "抓住主要矛盾，其他的会跟着动" },
+  { key = "money-glance", title = "看一眼钱：库存、冰岛基金、这个月的花销", cat = "整理", min = 10, feel = ["平静"], stance = ["守", "慎"], why = "心里有数，才不慌" },
+  { key = "week-plan-her", title = "想一想这周想和她做的一件事，放进盼头", cat = "她", min = 10, feel = ["平静", "充沛"], when = "weekend", stance = ["合"], why = "期待本身就是快乐的一部分" },
+]

@@ -179,7 +179,7 @@ NEED_WORDS = [
     ("home", ["打扫", "洗衣", "做饭", "做菜", "收纳", "收拾", "垃圾", "整理房间", "熨"]),
     ("camera", ["拍照", "拍摄", "实拍", "样张", "拍光"]),
     ("phone", ["发消息", "问她", "回复", "回消息", "打电话", "联系", "预约", "提醒她"]),
-    ("desk", ["写", "画", "改图", "报告", "邮件", "上架", "剪辑", "脚本", "录入", "复习", "卡片", "预算", "清单", "表格", "研究", "查一下", "比较"]),
+    ("desk", ["写", "画", "改图", "报告", "邮件", "上架", "剪辑", "脚本", "录入", "复习", "卡片", "预算", "清单", "表格", "研究", "查一下", "比较", "添加", "「"]),
 ]
 DOMAIN_NEED = {"建筑工作": "work", "Part3": "desk", "器材事业": "desk", "自媒体": "desk", "生活维持": "home",
                "旅行": "desk", "健康": "leave", "关系": "any", "阅读思考": "any"}
@@ -219,6 +219,12 @@ def set_place(conn, name: str) -> None:
 def with_her(conn, at: datetime) -> bool:
     saved = db.get_meta(conn, "with_her", {})
     return bool(saved.get("on")) and saved.get("at", "") >= (at - timedelta(hours=3)).isoformat(timespec="seconds")
+
+
+def her_known(conn, at: datetime) -> bool:
+    """3 小时内你说过她在不在身边。"""
+    saved = db.get_meta(conn, "with_her", {})
+    return bool(saved) and saved.get("at", "") >= (at - timedelta(hours=3)).isoformat(timespec="seconds")
 
 
 def set_with_her(conn, on: bool) -> None:

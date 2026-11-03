@@ -6,7 +6,7 @@ import sys
 from datetime import date
 
 from . import (__version__, business, cards, config, db, decisions, daily, experiments, family, letter, photos, llm, meals, memory, mind, now,
-               planner, relationship, review, seed, shi, tasks, tianshi, yi)
+               planner, relationship, review, seed, shi, tasks, tianshi, yi, jushi, mingli, moments)
 
 
 def out(obj) -> None:
@@ -67,6 +67,59 @@ def cmd_now(a, conn):
                 now.let_go(conn, sug["task_id"])
                 out("🍃 放下了。")
         return
+
+
+def cmd_jushi(a, conn):
+    if a.action == "rate":
+        ratings = dict(x.split("=", 1) for x in a.args if "=" in x)
+        jushi.rate(conn, ratings)
+        out("记下了。")
+        return
+    r = jushi.report(conn)
+    out(r["markdown"])
+    if a.ai:
+        out("\n" + (jushi.ai_reading(conn, r) or "（没有可用的 Claude）"))
+
+
+def cmd_choose(a, conn):
+    opts = [{"name": o} for o in a.option]
+    r = jushi.choose(conn, a.question, opts)
+    out(f"🧩 {a.question}")
+    for o in r["options"]:
+        out(f"\n· {o['name']}")
+        for k, t in o["notes"]:
+            out(f"  {k}：{t}")
+        for t in o["flags"]:
+            out(f"  ⚠️ {t}")
+    out("\n再问自己：")
+    for x in r["lenses"]:
+        out(f"  {x['name']}：{x['q']}")
+    out(f"\n{r['calibration']}。{r['practice']}\n天时：{r['tian']}\n{r['note']}")
+    out("（在网页「更多 → 人生局势」里可以对每个选项标注可逆性、对主要矛盾、对她、最坏情况，并记进决策日志）")
+
+
+def cmd_mingli(a, conn):
+    if a.birth:
+        mingli.set_birth(conn, a.birth)
+    c = mingli.mine(conn)
+    if not c:
+        out("先告诉我出生时间：python3 -m lifeos mingli --birth \"1997-05-01 08:30\"（只存在你的电脑上）")
+        return
+    out("\n".join(mingli.describe(c)) + "\n\n" + c["note"])
+
+
+def cmd_moments(a, conn):
+    if a.action == "add":
+        out("加进去了：" + moments.add(conn, " ".join(a.args), a.need, a.minutes))
+        return
+    if a.action in ("on", "off"):
+        for k in a.args:
+            moments.set_active(conn, k, a.action == "on")
+        out("好。")
+        return
+    for m in moments.listing(conn):
+        out(f"{'  ' if m['active'] else '× '}[{m['cat']}] {m['title']}（{tianshi.NEED_LABEL.get(m['need'], m['need'])}，{m['minutes']} 分钟）"
+            + (f" 好{m['yes']}/换{m['no']}" if m["yes"] or m["no"] else "") + f"  key={m['key']}")
 
 
 def cmd_tian(a, conn):
@@ -546,6 +599,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_now)
 
     sub.add_parser("tian", help="天时：此刻的时辰、天光、天气、节气与候、时令之卦").set_defaults(fn=cmd_tian)
+
+    s = sub.add_parser("jushi", help="人生局势：主要矛盾、持久战、能控制的事 / rate 关系=8 Part3=4（自评）")
+    s.add_argument("action", nargs="?", choices=["report", "rate"], default="report")
+    s.add_argument("args", nargs="*")
+    s.add_argument("--ai", action="store_true", help="请 Claude 推演一下（需要 API 或 claude-code 模式）")
+    s.set_defaults(fn=cmd_jushi)
+
+    s = sub.add_parser("choose", help="选择分析：lifeos choose \"要不要做大器材生意\" -o 加码 -o 维持")
+    s.add_argument("question")
+    s.add_argument("-o", "--option", action="append", required=True)
+    s.set_defaults(fn=cmd_choose)
+
+    s = sub.add_parser("mingli", help="命理（文化的镜子）：--birth \"1997-05-01 08:30\"")
+    s.add_argument("--birth")
+    s.set_defaults(fn=cmd_mingli)
+
+    s = sub.add_parser("moments", help="此刻宜的选择库：list / add 标题 --need home --minutes 15 / off key / on key")
+    s.add_argument("action", nargs="?", choices=["list", "add", "on", "off"], default="list")
+    s.add_argument("args", nargs="*")
+    s.add_argument("--need", default="any", choices=list(tianshi.NEED_LABEL))
+    s.add_argument("--minutes", type=int, default=15)
+    s.set_defaults(fn=cmd_moments)
 
     sub.add_parser("pocket", help="口袋：装着的杂事，不追你").set_defaults(fn=cmd_pocket)
 
