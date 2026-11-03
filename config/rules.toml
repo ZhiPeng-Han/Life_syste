@@ -1,0 +1,365 @@
+# LifeOS 默认规则（程序记忆）
+# 这份文件就是"不再需要思考的决策"。每次周复盘后，根据系统建议修改这里，并 git commit。
+# 修改历史 = 你的生活方式迭代史。
+
+[ai]
+# auto：设置了 ANTHROPIC_API_KEY 就实时调用 API；没有就只靠每日梳理（默认）
+# daily：不实时调用任何 AI，只靠每天的 Claude Code 定时任务梳理（不需要 API key）
+# claude-code：在你主动点的地方（写信、问卦解读、惊喜方案）调用本机的 claude 命令，用你的 Claude 登录；会慢一些
+mode = "auto"
+
+[general]
+currency = "£"            # 货币符号，按实际修改
+day_start = "07:00"
+day_end = "22:00"   # 之后是复位、签到、放松，不再排任务
+buffer_ratio = 0.2         # 每天留 20% 缓冲，不排满
+checkin_time = "22:10"
+
+# ---------------------------------------------------------------
+# 领域：每周时间预算（小时）与本季度角色
+# role: main = 主线(权重1.5) / side = 支线(1.0) / frozen = 冻结(0.3)
+# ---------------------------------------------------------------
+[domains."关系"]
+budget = 12
+role = "main"
+keywords = ["她", "女友", "女朋友", "约会", "纪念日", "惊喜", "一起"]
+
+[domains."建筑工作"]
+budget = 45
+role = "main"
+keywords = ["项目", "设计", "甲方", "图纸", "方案", "立面", "平面", "会议", "事务所", "施工"]
+
+[domains."Part3"]
+budget = 7
+role = "main"
+keywords = ["part3", "part 3", "pedr", "riba", "arb", "case study", "合同", "jct", "执业", "考试", "复习"]
+
+[domains."器材事业"]
+budget = 7
+role = "side"
+keywords = ["镜头", "相机", "收了", "出了", "上架", "发货", "快递", "闲鱼", "ebay", "mpb", "买家", "卖家", "捡漏", "成色", "机身", "转售", "平台"]
+
+[domains."自媒体"]
+budget = 4
+role = "side"
+keywords = ["视频", "自媒体", "剪辑", "选题", "脚本", "小红书", "b站", "youtube", "抖音", "粉丝"]
+
+[domains."生活维持"]
+budget = 8
+role = "side"
+keywords = ["家务", "打扫", "卫生", "洗衣", "做饭", "做菜", "买菜", "超市", "收纳", "垃圾"]
+
+[domains."健康"]
+budget = 4
+role = "side"
+keywords = ["锻炼", "健身", "跑步", "睡眠", "体重", "减肥", "徒步", "拉伸", "游泳"]
+
+[domains."旅行"]
+budget = 0
+role = "side"
+keywords = ["旅行", "旅游", "冰岛", "机票", "酒店", "行程", "签证", "极光"]
+
+[domains."阅读思考"]
+budget = 3
+role = "side"
+keywords = ["书", "阅读", "哲学", "思考", "导则", "人生"]
+
+# ---------------------------------------------------------------
+# 节律：生活的节奏，不是时间格子。平时只作为温和的提示出现；
+# 只有你点"今天我需要一点结构"时，才会展开成时间表。weekdays: 1=周一 ... 7=周日
+# ---------------------------------------------------------------
+[[blocks]]
+name = "📚 早晨的 Part 3 时光"
+domain = "Part3"
+weekdays = [1, 2, 3, 4, 5]
+start = "07:00"
+end = "07:45"
+
+[[blocks]]
+name = "💼 建筑工作"
+domain = "建筑工作"
+weekdays = [1, 2, 3, 4, 5]
+start = "09:00"
+end = "18:00"
+fixed = true
+
+[[blocks]]
+name = "💪 锻炼"
+domain = "健康"
+weekdays = [1, 3, 5]
+start = "18:30"
+end = "19:30"
+
+[[blocks]]
+name = "❤️ 和她在一起"
+domain = "关系"
+weekdays = [2, 4]
+start = "19:30"
+end = "22:00"
+
+[[blocks]]
+name = "❤️ 周六，属于你们"
+domain = "关系"
+weekdays = [6]
+start = "17:30"
+end = "23:00"
+
+[[blocks]]
+name = "📦 发货批次（周二午休）"
+domain = "器材事业"
+weekdays = [2]
+start = "12:30"
+end = "13:00"
+
+[[blocks]]
+name = "🧹 周六上午收拾一下家"
+domain = "生活维持"
+weekdays = [6]
+start = "09:00"
+end = "10:00"
+
+[[blocks]]
+name = "📦 发货批次（周六）"
+domain = "器材事业"
+weekdays = [6]
+start = "10:15"
+end = "11:00"
+
+[[blocks]]
+name = "📸 拍照上架（一次拍完）"
+domain = "器材事业"
+weekdays = [7]
+start = "10:00"
+end = "12:00"
+
+[[blocks]]
+name = "📚 Part 3 安静的下午"
+domain = "Part3"
+weekdays = [7]
+start = "14:00"
+end = "17:00"
+
+[[blocks]]
+name = "🍳 一起做饭"
+domain = "关系"
+weekdays = [7]
+start = "17:30"
+end = "19:00"
+
+[[blocks]]
+name = "✉️ 读这周的信，想想下周想和她做什么"
+domain = "阅读思考"
+weekdays = [7]
+start = "20:30"
+end = "21:15"
+
+[[blocks]]
+name = "🌙 收一收，说晚安"
+domain = "生活维持"
+weekdays = [1, 2, 3, 4, 5, 6, 7]
+start = "22:00"
+end = "22:15"
+
+# ---------------------------------------------------------------
+# 决策自主等级（L0 记录 / L1 建议 / L2 默认 / L3 自动+汇报 / L4 托管）
+# cap = 上限，系统永远不会把该类决策升级到超过这个等级
+# ---------------------------------------------------------------
+[autonomy.daily_plan]
+level = 2
+cap = 3
+desc = "每日日程"
+
+[autonomy.meal_plan]
+level = 2
+cap = 4
+desc = "每周菜单与购物清单"
+
+[autonomy.deal_eval]
+level = 1
+cap = 2
+desc = "捡漏收购评估"
+
+[autonomy.listing_price]
+level = 1
+cap = 3
+desc = "上架定价"
+
+[autonomy.surprise]
+level = 1
+cap = 1
+desc = "惊喜建议（永远只建议）"
+
+[autonomy.life]
+level = 0
+cap = 1
+desc = "人生重大决策（只做镜子）"
+
+[autonomy_policy]
+min_samples = 20       # 至少多少次反馈才考虑升级
+promote_rate = 0.9     # 采纳率达到多少提议升级
+
+# ---------------------------------------------------------------
+# 器材事业
+# ---------------------------------------------------------------
+[business]
+min_profit_abs = 40          # 期望利润绝对值下限
+min_profit_ratio = 0.15      # 期望利润 / 收购价 下限
+hour_value = 15              # 你的时间单价（用于扣除时间成本）
+default_hours_per_item = 1.5 # 每件平均处理小时（检测+拍照+上架+沟通+发货）
+stale_days = 21              # 上架多少天算滞销
+max_inventory_value = 3000   # 库存占用资金上限
+
+# 平台费率：初始值仅为占位，请按各平台当前真实费率修改
+[business.platform_fee]
+"闲鱼" = 0.01
+"eBay" = 0.13
+"MPB" = 0.0
+"小红书" = 0.05
+"其他" = 0.05
+
+# 瑕疵折价：初始值是猜测，系统会用你的真实成交数据自动校准（见 lifeos/business.py）
+[business.defect_discount]
+"雾" = 0.10
+"霉" = 0.25
+"划痕" = 0.05
+"脱胶" = 0.20
+"对焦异常" = 0.30
+"卡口磨损" = 0.03
+"灰" = 0.02
+
+# ---------------------------------------------------------------
+# 共同基金：器材利润的一部分自动计入
+# ---------------------------------------------------------------
+[funds."冰岛基金"]
+target = 4000          # 初始估计，两人 7–10 天，按实际行程修改
+share_of_profit = 0.3  # 器材事业净利润的 30% 计入
+
+# ---------------------------------------------------------------
+# 菜单
+# ---------------------------------------------------------------
+[meals]
+light_dinners_per_week = 4   # 支持她减肥：每周至少几顿轻食晚餐
+
+# ---------------------------------------------------------------
+# 此刻：当你问"现在做什么"时，除了口袋里的事，系统也可以建议这些。
+# 它们不是任务，是照顾自己的方式。feelings = 适合什么感受的时候；when = any / day / evening
+# need = 在哪里做得了（地利）：leave 出去走走 / camera 带相机 / phone 手机 / home 在家 / any 哪里都行
+# ---------------------------------------------------------------
+[[now_options]]
+title = "出去走 20 分钟，不带目的地"
+need = "leave"
+minutes = 20
+outdoor = true
+feelings = ["烦躁", "疲惫", "低落", "平静"]
+when = "any"
+
+[[now_options]]
+title = "拿起相机，拍一张此刻的光"
+need = "camera"
+minutes = 15
+feelings = ["平静", "充沛", "低落"]
+when = "day"
+
+[[now_options]]
+title = "给她发一条消息，说说你此刻在想什么"
+need = "phone"
+minutes = 5
+feelings = ["充沛", "平静", "疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "泡杯茶，什么都不做，坐 10 分钟"
+need = "any"
+minutes = 10
+feelings = ["疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "读 20 分钟书"
+need = "any"
+minutes = 20
+feelings = ["平静", "疲惫"]
+when = "any"
+
+[[now_options]]
+title = "收拾一个小角落，10 分钟就停"
+need = "home"
+minutes = 10
+feelings = ["烦躁", "平静"]
+when = "any"
+
+[[now_options]]
+title = "拉伸 10 分钟，或者冲个热水澡"
+need = "home"
+minutes = 10
+feelings = ["疲惫", "烦躁", "低落"]
+when = "any"
+
+[[now_options]]
+title = "好好做一顿饭，慢慢吃"
+need = "home"
+minutes = 60
+feelings = ["平静", "充沛", "低落"]
+when = "evening"
+
+[[now_options]]
+title = "今晚早点睡"
+need = "home"
+minutes = 0
+feelings = ["疲惫", "低落"]
+when = "evening"
+
+# ---------------------------------------------------------------
+# 天时
+# ---------------------------------------------------------------
+[yi]
+enabled = true
+weight = 0.5   # 卦象"姿态"对建议的影响程度：0 = 只看不影响，1 = 影响最大（仍然只是轻重，不改变事实）
+
+[environment]
+city = "伦敦"      # 按你实际所在城市修改（用于天气）
+latitude = 51.51
+longitude = -0.13
+
+# 看看外面：新闻源（RSS）。domain 是默认归属的领域。可增删。
+[[environment.feeds]]
+url = "https://www.dezeen.com/architecture/feed/"
+domain = "建筑工作"
+
+[[environment.feeds]]
+url = "https://petapixel.com/feed/"
+domain = "器材事业"
+
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/business/rss.xml"
+domain = "建筑工作"
+
+[[environment.feeds]]
+url = "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+domain = "自媒体"
+
+# 天下大事（不归属某个领域，每日梳理时由 Claude 判断和你有没有关系）
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/world/rss.xml"
+
+[[environment.feeds]]
+url = "https://feeds.bbci.co.uk/news/uk/rss.xml"
+
+# ---------------------------------------------------------------
+# 记忆中枢：系统一开始就认识的"事物"。之后你提到的地点、器材型号、她的愿望里的事会自动加入。
+# ---------------------------------------------------------------
+[memory]
+topics = ["冰岛", "极光", "减肥", "转售平台"]
+
+# ---------------------------------------------------------------
+# 照片回响：填你的照片文件夹（可以是 Immich 的存储目录），然后运行 python -m lifeos photos scan
+# ---------------------------------------------------------------
+[photos]
+folders = []   # 例如 ["~/Pictures/Photos Library Export", "~/Pictures/Lightroom"]
+
+# ---------------------------------------------------------------
+# Telegram 机器人定时推送（需要 python -m lifeos bot 在运行）。留空就不推送。
+# ---------------------------------------------------------------
+[telegram]
+morning = ""          # 例如 "07:45"：推送早安
+weekly_digest = ""    # 例如 "Sun 20:00"：推送本周大势与一封信的开头

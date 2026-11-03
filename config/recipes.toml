@@ -1,0 +1,101 @@
+# 菜谱库：系统据此自动生成周菜单 + 购物清单。
+# light = 适合减脂的轻食晚餐；she_likes = 她喜欢（在签到中告诉系统后来改这里）
+# 这是初始样例，请替换成你们真正会做、爱吃的菜。
+
+[[recipe]]
+name = "番茄牛腩"
+minutes = 90
+light = false
+she_likes = true
+ingredients = ["牛腩", "番茄", "洋葱", "土豆"]
+
+[[recipe]]
+name = "清蒸鱼 + 西兰花"
+minutes = 30
+light = true
+she_likes = true
+ingredients = ["鲈鱼", "葱姜", "西兰花", "蒸鱼豉油"]
+
+[[recipe]]
+name = "鸡胸肉藜麦沙拉"
+minutes = 25
+light = true
+she_likes = false
+ingredients = ["鸡胸肉", "藜麦", "生菜", "小番茄", "牛油果"]
+
+[[recipe]]
+name = "虾仁滑蛋 + 杂粮饭"
+minutes = 20
+light = true
+she_likes = true
+ingredients = ["虾仁", "鸡蛋", "杂粮米"]
+
+[[recipe]]
+name = "日式味噌汤 + 三文鱼"
+minutes = 30
+light = true
+she_likes = true
+ingredients = ["三文鱼", "味噌", "豆腐", "海带"]
+
+[[recipe]]
+name = "麻婆豆腐"
+minutes = 25
+light = false
+she_likes = true
+ingredients = ["豆腐", "牛肉末", "郫县豆瓣", "花椒"]
+
+[[recipe]]
+name = "冬瓜排骨汤"
+minutes = 80
+light = true
+she_likes = true
+ingredients = ["排骨", "冬瓜", "姜"]
+
+[[recipe]]
+name = "蔬菜鸡蛋荞麦面"
+minutes = 15
+light = true
+she_likes = false
+ingredients = ["荞麦面", "鸡蛋", "菠菜"]
+
+[[recipe]]
+name = "宫保鸡丁"
+minutes = 30
+light = false
+she_likes = true
+ingredients = ["鸡腿肉", "花生", "干辣椒", "黄瓜"]
+
+[[recipe]]
+name = "牛肉蔬菜卷饼"
+minutes = 25
+light = false
+she_likes = false
+ingredients = ["牛肉片", "卷饼", "生菜", "彩椒"]
+
+[[recipe]]
+name = "菌菇鸡汤 + 青菜"
+minutes = 60
+light = true
+she_likes = true
+ingredients = ["鸡腿", "蘑菇", "青菜"]
+
+[[recipe]]
+name = "咖喱鸡饭"
+minutes = 40
+light = false
+she_likes = true
+ingredients = ["鸡腿肉", "咖喱块", "土豆", "胡萝卜", "大米"]
+
+[[recipe]]
+name = "凉拌鸡丝 + 豆腐汤"
+minutes = 30
+light = true
+she_likes = true
+ingredients = ["鸡胸肉", "黄瓜", "豆腐", "紫菜"]
+
+[[recipe]]
+name = "外出 / 剩菜日"
+minutes = 0
+light = false
+she_likes = true
+ingredients = []

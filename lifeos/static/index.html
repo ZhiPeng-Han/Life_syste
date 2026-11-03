@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LifeOS</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LifeOS">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f4f0">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">LifeOS <span id="llm" class="chip"></span></div>
+  <nav id="tabs">
+    <button data-tab="now" class="on">此刻</button>
+    <button data-tab="pocket">口袋</button>
+    <button data-tab="her">她</button>
+    <button data-tab="tianshi">天时</button>
+    <button data-tab="gear">器材</button>
+    <button data-tab="letter">信</button>
+    <button data-tab="more">更多</button>
+  </nav>
+</header>
+
+<main>
+  <section id="now" class="tab on"></section>
+  <section id="pocket" class="tab"></section>
+  <section id="her" class="tab"></section>
+  <section id="tianshi" class="tab"></section>
+  <section id="memory" class="tab"></section>
+  <section id="gear" class="tab"></section>
+  <section id="letter" class="tab"></section>
+  <section id="more" class="tab"></section>
+  <section id="today" class="tab"></section>
+  <section id="graph" class="tab"><p class="small"><a href="#more">← 更多</a></p><div class="legend" id="graph-legend"></div><div id="network"></div></section>
+  <section id="review" class="tab"></section>
+  <section id="system" class="tab"></section>
+  <section id="jushi" class="tab"></section>
+  <section id="moments" class="tab"></section>
+</main>
+
+<form id="capture">
+  <input id="capture-text" placeholder="记下此刻：一个瞬间、她说的话、一件杂事…" autocomplete="off">
+  <button>记下</button>
+</form>
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
